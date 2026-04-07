@@ -1,0 +1,320 @@
+#
+#----------------------------------------------------------------------#
+# job name       : ＩＦＰ集信ファイル監視取出共通シェル
+# shell name     : ifpRecv.src
+#                : 
+# create date    : 2025-02-06, K.Shimada
+# update date    : YYYY-MM-DD, 
+#                : 
+# 入力値         : *
+#                : 
+# 必須シェル変数 : 
+#                : LOG_FILE   = ログファイル名
+#                : ABEND      = 異常終了ステータス
+#                : SHELLNAME  = シェル名
+#                : NORMAL     = 正常終了ステータス
+#                : IFP_HOME   = IFPインストールディレクトリ名
+#                : PGMDIR     = Perl格納ディレクトリ名
+#                :
+#                : F_FILE         = 論理ファイル名
+#                : BAKRECV_DIR    = バックアップディレクトリ名
+#                : D_FILE         = 取出ファイル名
+#                :
+# 任意設定変数   :
+#                : N_NO           = 取出しファイル数                          
+#                                       ※省略時は1とみなす
+#                : P_PROCEDURE    = 取出しファイル数判定後処理区分
+#                                       ※省略時は1とみなす
+#                                     1:ファイルがN_NO数到着する迄待つ、監視打ち切りは無し。
+#                                       N_NO数以上のファイルが既に到着してる場合、異常終了する。
+#                                     3:ファイルがN_NO数到着する迄待つが、監視回数で打切る。
+#                                       N_NO数以上のファイルが既に到着してる場合、全ファイルを取込み正常終了する。
+#                : E_ERASE        = 取出し処理前の取出しファイル事前削除指示
+#                                       ※省略時、取出しファイルが存在する場合、異常終了する。
+#                : O_OVER_WRITE   = 取出しファイルの上書き指示
+#                                       ※取出しファイルが、存在しなければ新規作成し、
+#                                       　存在する場合は、ゼロバイトに切り詰め後追記する。
+#                                       　監視打切検知時、取出しファイルは開始時状態のまま何もせず、処理は正常終了する。
+#                                       ※E_ERASEと同時指定は不可。
+#                : SERCH_INTERVAL = 監視間隔（秒）                            
+#                                       ※省略時は180とみなす DDCは10とする
+#                : SERCH_CNT      = 監視回数                                  
+#                                       ※受信ファイル状態の監視は２回連続して変化が無い時、ファイル到着とする。
+#                                         その状態変化無し監視分も含めて指定する。
+#                : G_BAKGENENUM   = バックアップ世代数
+#
+#                :
+# 出力値         : *
+#                :
+# 戻り値         : NORMAL     : 正常終了
+#                : ABEND      : 異常終了
+#                :
+# memo           : 
+#----------------------------------------------------------------------#
+# 2025/09/01 K.Shimada       バックアップ世代数を追加
+#
+#==================================================
+#	開始処理
+#==================================================
+echo "$SHELLNAME:t : ifpRecv.src : start time = `date +%y/%m/%d:%H:%M:%S`"  | tee -a $LOG_FILE
+#
+#==================================================
+# 共通変数チェック（必須変数）
+#==================================================
+if ( ! $?LOG_FILE ) then
+    echo "※ifpRecv.src : 必須シェル変数 LOG_FILE が未設定です。"
+    echo "  事前処理で common.src を実行する必要があります。"
+    exit 51
+endif
+echo "■ ifpRecv.src  ■■■■■■■■■■■■■■■■■■■■■■■■■" >>$LOG_FILE
+#
+if ( ! $?ABEND ) then
+    echo "※ifpRecv.src : 必須シェル変数 ABEND が未設定です。" >>$LOG_FILE
+    echo "  事前処理で common.src を実行する必要があります。" >>$LOG_FILE
+    echo "■" >>$LOG_FILE
+    exit 51
+endif
+#
+if ( ! $?SHELLNAME ) then
+    echo "※ifpRecv.src : 必須シェル変数 SHELLNAME が未設定です。" >>$LOG_FILE
+    echo "  事前処理で common.src を実行する必要があります。" >>$LOG_FILE
+    echo "■" >>$LOG_FILE
+    exit $ABEND
+endif
+#
+if ( ! $?NORMAL ) then
+    echo "$SHELLNAME:t : 必須シェル変数 NORMAL が未設定です。" >>$LOG_FILE
+    echo "  事前処理で common.src を実行する必要があります。" >>$LOG_FILE
+    echo "■" >>$LOG_FILE
+    exit $ABEND
+endif
+#
+if ( ! $?IFP_HOME ) then
+    echo "$SHELLNAME:t : 必須シェル変数 IFP_HOME が未設定です。" >>$LOG_FILE
+    echo "  IFP環境を確認する必要があります。" >>$LOG_FILE
+    echo "■" >>$LOG_FILE
+    exit $ABEND
+endif
+#
+if ( ! $?PGMDIR ) then
+    echo "$SHELLNAME:t : 必須シェル変数 PGMDIR が未設定です。" >>$LOG_FILE
+    echo "  事前処理で common.src を実行する必要があります。" >>$LOG_FILE
+    echo "■" >>$LOG_FILE
+    exit $ABEND
+endif
+#
+#==================================================
+#	論理ファイル名のチェック（必須変数）
+#==================================================
+if ( ! $?F_FILE ) then
+    echo "$SHELLNAME:t : 必須シェル変数 F_FILE が未設定です。" >>$LOG_FILE
+    echo "■" >>$LOG_FILE
+    exit $ABEND
+endif
+#==================================================
+#	バックアップディレクトリ名のチェック（必須変数）
+#==================================================
+if ( ! $?BAKRECV_DIR ) then
+    echo "$SHELLNAME:t : 必須シェル変数 BAKRECV_DIR が未設定です。" >>$LOG_FILE
+    echo "■" >>$LOG_FILE
+    exit $ABEND
+endif
+set	_check_=`echo "$BAKRECV_DIR" | awk '{ print substr($1,1,1) }'`
+if ( "$_check_" != "/" ) then 
+    echo "$SHELLNAME:t : 必須シェル変数 BAKRECV_DIR は絶対パスで指定して下さい。" >>$LOG_FILE
+    echo "$SHELLNAME:t : BAKRECV_DIR=[$BAKRECV_DIR]" >>$LOG_FILE
+    echo "■" >>$LOG_FILE
+    exit $ABEND
+endif
+#==================================================
+#	取出ファイル名のチェック（必須変数）
+#==================================================
+if ( ! $?D_FILE ) then
+    echo "$SHELLNAME:t : 必須シェル変数 D_FILE が未設定です。" >>$LOG_FILE
+    echo "■" >>$LOG_FILE
+    exit $ABEND
+endif
+set	_check_=`echo "$D_FILE" | awk '{ print substr($1,1,1) }'`
+if ( "$_check_" != "/" ) then 
+    echo "$SHELLNAME:t : 必須シェル変数 D_FILE は絶対パスで指定して下さい。" >>$LOG_FILE
+    echo "$SHELLNAME:t : D_FILE=[$D_FILE]" >>$LOG_FILE
+    echo "■" >>$LOG_FILE
+    exit $ABEND
+endif
+#==================================================
+#	取出しファイル数のチェック（任意設定変数）
+#==================================================
+if ( ! $?N_NO ) then
+    set N_NO=1
+else
+    set _check_=`echo "$N_NO" | egrep '^[0-9]+$'`
+    if ( "$_check_" == "" ) then
+       echo "$SHELLNAME:t : シェル変数 N_NO は数値で指定して下さい。" >>$LOG_FILE
+       echo "$SHELLNAME:t : N_NO=[$N_NO]" >>$LOG_FILE
+       echo "■" >>$LOG_FILE
+       exit $ABEND
+    endif
+endif
+#==================================================
+#	取出しファイル数判定後処理区分のチェック（任意設定変数）
+#==================================================
+if ( ! $?P_PROCEDURE ) then
+    set P_PROCEDURE=1
+else
+    set _check_=`echo "$P_PROCEDURE" | egrep '^[13]$'`
+    if ( "$_check_" == "" ) then
+       echo "$SHELLNAME:t : シェル変数 P_PROCEDURE は 1or3 を指定して下さい。" >>$LOG_FILE
+       echo "$SHELLNAME:t : P_PROCEDURE=[$P_PROCEDURE]" >>$LOG_FILE
+       echo "■" >>$LOG_FILE
+       exit $ABEND
+    endif
+endif
+#==================================================
+#	取出しファイル事前削除指示のチェック（任意設定変数）
+#==================================================
+if ( ! $?E_ERASE ) then
+    set E_ERASE=""
+else
+    if ( "$E_ERASE" != "" && "$E_ERASE" != "-e" ) then
+       echo "$SHELLNAME:t : シェル変数 E_ERASE は -e or 空文字列 を指定して下さい。" >>$LOG_FILE
+       echo "$SHELLNAME:t : E_ERASE=[$E_ERASE]" >>$LOG_FILE
+       echo "■" >>$LOG_FILE
+       exit $ABEND
+    endif
+endif
+#==================================================
+#	監視間隔のチェック（任意設定変数）
+#==================================================
+if ( ! $?SERCH_INTERVAL ) then
+#DDC    set SERCH_INTERVAL=180
+    set SERCH_INTERVAL=10
+else
+    set _check_=`echo "$SERCH_INTERVAL" | egrep '^[0-9]+$'`
+    if ( "$_check_" == "" ) then
+       echo "$SHELLNAME:t : シェル変数 SERCH_INTERVAL は数値で指定して下さい。" >>$LOG_FILE
+       echo "$SHELLNAME:t : SERCH_INTERVAL=[$SERCH_INTERVAL]" >>$LOG_FILE
+       echo "■" >>$LOG_FILE
+       exit $ABEND
+    endif
+endif
+#==================================================
+#	監視回数のチェック（任意設定変数）
+#==================================================
+if ( ! $?SERCH_CNT ) then
+    set SERCH_CNT=0
+else
+    set _check_=`echo "$SERCH_CNT" | egrep '^[0-9]+$'`
+    if ( "$_check_" == "" ) then
+       echo "$SHELLNAME:t : シェル変数 SERCH_CNT は数値で指定して下さい。" >>$LOG_FILE
+       echo "$SHELLNAME:t : SERCH_CNT=[$SERCH_CNT]" >>$LOG_FILE
+       echo "■" >>$LOG_FILE
+       exit $ABEND
+    endif
+endif
+#==================================================
+#	取出しファイルの上書き指示のチェック（任意設定変数）
+#==================================================
+if ( ! $?O_OVER_WRITE ) then
+    set O_OVER_WRITE=""
+else
+    if ( "$O_OVER_WRITE" != "" && "$O_OVER_WRITE" != "-o" ) then
+       echo "$SHELLNAME:t : シェル変数 O_OVER_WRITE は -o or 空文字列 を指定して下さい。" >>$LOG_FILE
+       echo "$SHELLNAME:t : O_OVER_WRITE=[$O_OVER_WRITE]" >>$LOG_FILE
+       echo "■" >>$LOG_FILE
+       exit $ABEND
+    endif
+endif
+#==================================================
+#	取出し後ファイル扱いの関連チェック（任意設定変数）
+#==================================================
+if ( "${E_ERASE}${O_OVER_WRITE}" != "" && "${E_ERASE}${O_OVER_WRITE}" != "-e" && "${E_ERASE}${O_OVER_WRITE}" != "-o" ) then
+       echo "$SHELLNAME:t : シェル変数 E_ERASE と O_OVER_WRITE は 同時指定できません。" >>$LOG_FILE
+       echo "$SHELLNAME:t : E_ERASE=[$E_ERASE] O_OVER_WRITE=[$O_OVER_WRITE]" >>$LOG_FILE
+       echo "■" >>$LOG_FILE
+       exit $ABEND
+endif
+#==================================================
+#	バックアップ世代数のチェック（任意設定変数）
+#==================================================
+if ( ! $?G_BAKGENENUM ) then
+    set G_BAKGENENUM=""
+else
+    set _check_=`echo "$G_BAKGENENUM" | egrep '^[0-9]+$'`
+    if ( "$_check_" == "" ) then
+       echo "$SHELLNAME:t : シェル変数 G_BAKGENENUM は数値で指定して下さい。" >>$LOG_FILE
+       echo "$SHELLNAME:t : G_BAKGENENUM=[$G_BAKGENENUM]" >>$LOG_FILE
+       echo "■" >>$LOG_FILE
+       exit $ABEND
+    endif
+    set G_BAKGENENUM="-g ${G_BAKGENENUM}"
+endif
+#----------------------------------------------------------------------#
+# 集信ファイル取出し処理
+#----------------------------------------------------------------------#
+
+#==================================================
+#	起動パラメータの出力
+#==================================================
+echo "$SHELLNAME:t : 論理ファイル名＝$F_FILE" >>$LOG_FILE
+echo "$SHELLNAME:t : 配信元物理ファイル名＝$F_FILE" >>$LOG_FILE
+#==================================================
+#	ファイルの集信取出しコマンド実行
+#==================================================
+echo "$SHELLNAME:t : ================================================" >>$LOG_FILE
+
+echo "$SHELLNAME:t : ファイル＝$F_FILE の 集信取出します。" >>$LOG_FILE
+echo "$SHELLNAME:t : 起動コマンド：" >>$LOG_FILE
+set _COMMAND = "$PGMDIR/chkRECV.pl -s $SHELLNAME:t -i $IFP_HOME/data -b $BAKRECV_DIR -f $F_FILE -d $D_FILE -n $N_NO -p $P_PROCEDURE $E_ERASE -w $SERCH_INTERVAL -c $SERCH_CNT $O_OVER_WRITE $G_BAKGENENUM"
+echo "$SHELLNAME:t : $_COMMAND " >>$LOG_FILE
+
+$_COMMAND  >>&$LOG_FILE
+set _CMD_STATUS=$status
+echo "$SHELLNAME:t : 終了ステータス＝$_CMD_STATUS" >>$LOG_FILE
+
+echo "$SHELLNAME:t : ================================================" >>$LOG_FILE
+
+#----------------------------------------------------------------------#
+# エラーチェック
+#----------------------------------------------------------------------#
+if ( $_CMD_STATUS > 1) then
+    echo "$SHELLNAME:t : 集信取出し出来ませんでした。" | tee -a $LOG_FILE
+    echo "■" >>$LOG_FILE
+
+    unset    _check_
+    unset    _COMMAND
+    unset    _CMD_STATUS
+    ###unset    N_NO
+    ###unset    P_PROCEDURE
+    ###unset    E_ERASE
+    ###unset    SERCH_INTERVAL
+    ###unset    SERCH_CNT
+
+    echo "$SHELLNAME:t : ifpRecv.src : abnormal end time = `date +%y/%m/%d:%H:%M:%S`" | tee -a $LOG_FILE
+    exit $ABEND
+endif
+
+#==================================================
+#	作業シェル変数の削除
+#==================================================
+#
+if ( $_CMD_STATUS == 1) then
+   echo "$SHELLNAME:t : 監視回数に達しました。" | tee -a $LOG_FILE
+else
+   echo "$SHELLNAME:t : 集信取出し出来ました。" | tee -a $LOG_FILE
+   ls -l $D_FILE | tee -a $LOG_FILE
+endif
+unset    _check_
+unset	 _COMMAND
+unset	 _CMD_STATUS
+###unset    N_NO
+###unset    P_PROCEDURE
+###unset    E_ERASE
+###unset    SERCH_INTERVAL
+###unset    SERCH_CNT
+
+#
+#
+echo "$SHELLNAME:t : ifpRecv.src : end   time = `date +%y/%m/%d:%H:%M:%S`" | tee -a $LOG_FILE
+echo "■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■" >>$LOG_FILE
+exit $NORMAL
+#

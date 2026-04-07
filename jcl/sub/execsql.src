@@ -1,0 +1,79 @@
+#
+#----------------------------------------------------------------------#
+# job name      : ＤＢ Ｐｒｏｊｅｃｔ シェル共通処理サブモジュール
+# shell name    : execsql.src
+# parameters    : none
+# effect        : ＳＱＬプログラム実行＆ステータス・チェック
+# author        : mizno
+# create date   : 1996.04.05 Initial Release.
+# update date   : 1996.11.27 n.kawakami
+#               : 2000.10.03 T.ITO  end.src追加
+# 必須ｼｪﾙ変数   : SHELLNAME = シェル名称
+#               : LOG_FILE  = ログファイル名称
+#               : NORMAL    = 正常終了ステータス
+#               : ABEND     = 異常終了ステータス
+#               : SQL_NAME  = SQLプログラム名称
+#               : SQL_PARM  = SQLプログラムパラメータ
+#               : LOG_DIR   = ログ出力先ディレクトリ名称（ワークで使用）
+# memo          : 
+# NO 修正日付     修正者     修正内容
+# 01 2005/08/24   K.Ebihara  サーバ移転対応修正
+#                            01.sjtoeuc -> iconv
+# 02 2005/09/16   K.Ebihara  sqlplus実行ログより実行結果コードを抽出し
+#                            src実行ステータスに格納するように修正 
+# 03 2025/01/28   K.Shimada  LMDC移行対応
+# 04 2025/09/22   K.Shimada  エラー検知時「文字列括り無しの為if文が文法エラー」を改善
+# 05 2025/12/01   M.Yamamoto 店舗機器よりコピー、end.srcは削除(マージ済み)
+#
+#----------------------------------------------------------------------#
+# ＳＱＬプログラム実行＆ステータス・チェック
+#----------------------------------------------------------------------#
+#
+#       execute program
+#
+echo "$SHELLNAME:t : $SQL_NAME:t : start time = `date +%y/%m/%d:%H:%M:%S`" \
+                                                                >> $LOG_FILE
+# ログ出力を一時ファイルに入力
+set TMP_FILE="${LOG_FILE}_tmp_$$"
+#LMDC移行 オプション追加#$SQL_NAME $SQL_PARM  >>  $TMP_FILE
+$SQL_NAME -L $SQL_PARM  >>  $TMP_FILE
+#set sts = $status
+
+# 一時ファイルのログを、ログファイルへ出力
+#-->#sjtoeuc $TMP_FILE             >> $LOG_FILE
+#LMDC移行 文字コード変更#iconv -f SJIS -t EUC-JP ${TMP_FILE} >> ${LOG_FILE}
+iconv -f SJIS -t utf8 ${TMP_FILE} >> ${LOG_FILE}
+
+# 実行ステータス設定
+#	Oracle/Sql*Plusエラーコードを取得する
+#		・ORA-nnnnn : Oracleエラーコード
+#		・SP2-nnnnn : Sql*Plusエラーコード
+#LMDC移行 文字コード変更#set code_OracleErr	= `iconv -f SJIS -t EUC-JP ${TMP_FILE} |\
+set code_OracleErr	= `iconv -f SJIS -t utf8 ${TMP_FILE} |\
+					grep '[OS][RP][A2]' |\
+					sed -e 's/: *.*//g' -e 's/.*ORA-//g' -e 's/.*SP2-//g' |\
+					awk '{ if( $0 ~/[0-9]*/ ) print }'`
+#LMDC移行 エラー検知時の判定文改善#if ( ${code_OracleErr} == "" ) then
+if ( "${code_OracleErr}" == "" ) then
+	set sts	= 0
+else
+	set sts = `echo ${code_OracleErr} | awk '{ printf("%d", $0 ) }'`
+endif
+
+# 一時ファイルを削除
+rm      $TMP_FILE
+
+# 終了時刻記録
+echo "$SHELLNAME:t : $SQL_NAME:t : end   time = `date +%y/%m/%d:%H:%M:%S`" \
+                                                                >> $LOG_FILE
+
+# ＳＱＬプログラム実行結果判定
+if ( $sts == 0 )  then
+    echo "$SHELLNAME:t :$SQL_NAME:t normal end"                 >> $LOG_FILE
+#    source $SUBSRCDIR/end.src
+    exit $NORMAL
+else
+    echo "$SHELLNAME:t :$SQL_NAME:t abnormal end :status = $sts">> $LOG_FILE
+    exit $ABEND
+endif
+#

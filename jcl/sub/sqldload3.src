@@ -1,0 +1,83 @@
+#
+#----------------------------------------------------------------------#
+# job name      : ＤＢ Ｐｒｏｊｅｃｔ シェル共通処理サブモジュール
+# shell name    : sqldload3.src
+# parameters    : none
+# effect        : ｓｑｌｌｏａｄ実行＆ステータス・チェック(direct 用)
+# author        : ohshiro
+# create date   : 1997.05.15 Initial Release.
+# update date   : 1998.07.22 sqlloadのlogを100行までログ出力に変更(PJT-C 水野)
+#               : 1998.12.07 正常時はロード件数等に絞ってしかログ出力し、
+#               :            異常時は全てのログを出力するように変更(PJT-C 水野)
+#               : 1999.11.11 UNRECOVERABLE情報をログ出力する(PJT-C末広)
+#               : 2001.07.05 sqlloadをsqlldrに変更した(セキュリティチーム 関)
+#               :
+# 必須シェル変数   : SHELLNAME = シェル名称
+#               : LOG_FILE  = ログファイル名称
+#               : NORMAL    = 正常終了ステータス
+#               : ABEND     = 異常終了ステータス
+#               : ORAUID    = オラクルユーザー名
+#               : ORAPWD    = オラクルパスワード
+#               : CTL_FILE  = ｓｑｌｌｏａｄコントロールファイル
+#               : DAT_FILE  = ｓｑｌｌｏａｄ入力データ
+#               : LOG_FILE  = ｓｑｌｌｏａｄログファイル
+#               : LOG_DIR   = ログ出力先ディレクトリ名称（ワークで使用）
+# memo          : 変更点はパスワードを表示しない。
+# NO 修正日付     修正者     修正内容
+# 02 2025/01/28   K.Shimada  LMDC移行対応
+# 03 2025/12/01   M.Yamamoto 店舗機器のsqldload2.srcの改修内容を反映
+#----------------------------------------------------------------------#
+# ｓｑｌｌｏａｄパラメータ設定＆ログ出力
+#----------------------------------------------------------------------#
+set _USR_="userid=$USER_ID/$ORA_PASSWD"
+set _CTL_="control=$CTL_FILE"
+set _DAT_="data=$DAT_FILE"
+set ___TMP___LOG___=$LOG_DIR/$WKNAME.log.$ORAUID
+set _LOG_="log=$___TMP___LOG___"
+set _BAD_="bad=$DAT_FILE.bad.$ORAUID.`whoami`"
+set _DISCARD_="discard=$DAT_FILE.discard.$ORAUID.`whoami`"
+#set _DRT_PRM_="direct=true"
+set SQLLOAD_PARAM= \
+          ( $_USR_  $_CTL_  $_DAT_  $_BAD_ $_DISCARD_ $_LOG_ )
+#         ( $_USR_  $_CTL_  $_DAT_  $_BAD_ $_DISCARD_ $_LOG_ $_DRT_PRM_ )
+# パラメータの内容をログ出力
+echo "userid=$USER_ID/(hidden passwd)"                       >> $LOG_FILE
+echo "$_CTL_"                                                >> $LOG_FILE
+echo "$_DAT_"                                                >> $LOG_FILE
+echo "$_BAD_"                                                >> $LOG_FILE
+echo "$_DISCARD_"                                            >> $LOG_FILE
+echo "$_LOG_"                                                >> $LOG_FILE
+#echo "$_DRT_PRM_"                                            >> $LOG_FILE
+#----------------------------------------------------------------------#
+# ｓｑｌｌｏａｄ実行＆ステータス・チェック
+#----------------------------------------------------------------------#
+#
+#       execute program
+#
+#### x13check start V
+# /home1/disprod1/fsc/bin6/x13check -A $DAT_FILE
+#### x13check end   A
+echo "$SHELLNAME:t : sqldload3 : start time = `date +%y/%m/%d:%H:%M:%S`" \
+                                                             >> $LOG_FILE
+# ログ出力を一時ファイルに入力
+#sqlload  $SQLLOAD_PARAM > /dev/null 20010705使用中止
+sqlldr  $SQLLOAD_PARAM > /dev/null
+set sts = $status
+echo "$SHELLNAME:t : sqldload3 : end   time = `date +%y/%m/%d:%H:%M:%S`" \
+                                                             >> $LOG_FILE
+# 一時ファイルのログをSJIS->EUC変換
+#sjtoeuc $___TMP___LOG___ >> $LOG_FILE
+#LMDC移行 文字コード変更#cat $___TMP___LOG___ >> $LOG_FILE
+iconv -f SJIS -t utf8 $___TMP___LOG___ >> $LOG_FILE
+
+# ＳＱＬプログラム実行結果判定
+if ( $sts == 0 )  then
+    /bin/rm $___TMP___LOG___
+    echo "$SHELLNAME:t : sqldload3 normal end"                 >> $LOG_FILE
+    exit $NORMAL
+else
+    echo "$SHELLNAME:t : sqldload3 abnormal end :status = $sts">> $LOG_FILE
+    /bin/rm $___TMP___LOG___
+    exit $ABEND
+endif
+#

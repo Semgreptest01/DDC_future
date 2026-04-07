@@ -1,0 +1,157 @@
+#
+#----------------------------------------------------------------------#
+# job name      : OCI環境用 テーブル単位の data pump export & gz圧縮 実行モジュール
+# shell name    : exportdp.src
+# parameters    : none
+# effect        : テーブル単位の data pump export & gz圧縮 
+# author        : Vinx
+# create date   : 2025/08/21
+# update date   : 
+# memo          : 
+#  
+#  ログインパスワードを暗号化キーに使用します
+#
+#  必須変数
+#    ・common.srcで設定される内容
+#      SHELLNAME  : 呼び出し元シェル名
+#      ORAUID     : スキーマ名(common.srcで設定される内容)
+#      ORAPWD     : パスワード(common.srcで設定される内容)
+#      LOG_FILE   : 追記されるログファイル名(common.srcで設定される内容)
+#      NORMAL     : 正常終了時のステータス値
+#      ABEND      : 異常終了時のステータス値
+#
+#    ・呼び出し元シェルで設定する内容
+#      DMP_TBL        : UTF8で指定したダンプテーブル名。複数可能ある場合はカンマ区切りで指定
+#      DMP_DIROBJ     : 出力先のディレクトリオブジェクト
+#      DMP_DIROBJPATH : 出力先のディレクトリオブジェクトに対するローカルファイルシステム上のディレクトリ名
+#      DMP_FILE       : gz圧縮前のダンプファイル名   例) foo.dmp.gz の場合は foo.dmp
+#      DMP_FILEPATH   : gz圧縮後のダンプファイル出力先ディレクトリ
+#      EXPDMPOPTS     : expdp のオプション（省略可能）
+#
+#    ・作成されるgz圧縮後のダンプファイルは、${DMP_FILEPATH}/${DMP_FILE} となります
+#
+#    ・ダンプファイル出力先ディレクトリ($DMP_FILEPATH)は、chmodコマンドで777が設定されている事
+#          $ chmod 777 【ダンプファイル出力先ディレクトリ】
+#
+#----------------------------------------------------------------------#
+#
+echo "$SHELLNAME:t : exportdp.src : start time = `date +%y/%m/%d:%H:%M:%S`"  >> $LOG_FILE
+
+if ( ! $?EXPDMPOPTS ) then
+   set EXPDMPOPTS = ""
+endif
+
+if ( ! -d "$DMP_DIROBJPATH" ) then
+  echo "*** ERROR *** ディレクトリ[$DMP_DIROBJPATH]が存在しません" | tee -a $LOG_FILE
+  exit $ABEND
+endif
+if ( ! -d "$DMP_FILEPATH" ) then
+  echo "*** ERROR *** ディレクトリ[$DMP_FILEPATH]が存在しません" | tee -a $LOG_FILE
+  exit $ABEND
+endif
+
+#--------------------------------------------------------------------------------
+# 過去のファイルを削除する
+#--------------------------------------------------------------------------------
+if ( -f ${DMP_DIROBJPATH}/${DMP_FILE} ) then
+  /bin/rm -f ${DMP_DIROBJPATH}/${DMP_FILE}
+endif
+if ( -f ${DMP_DIROBJPATH}/expdp_$$.log ) then
+  /bin/rm -f ${DMP_DIROBJPATH}/expdp_$$.log
+endif
+if ( -f ${DMP_FILEPATH}/expdp_std_$$.log ) then
+  /bin/rm -f ${DMP_FILEPATH}/expdp_std_$$.log
+endif
+
+#--------------------------------------------------------------------------------
+# expdpのダンプファイルは、oracleユーザ以外read権限がついていない。
+# 事前にダンプファイルを実行ユーザ権限で作成しておき、
+# expdp実行時は上書き（実行前権限を引き継ぐ）を指定する。
+#--------------------------------------------------------------------------------
+touch ${DMP_DIROBJPATH}/${DMP_FILE}
+chmod 666 ${DMP_DIROBJPATH}/${DMP_FILE}
+#--------------------------------------------------------------------------------
+# data pump export の起動
+#--------------------------------------------------------------------------------
+set TABLE_NAME="`echo ${DMP_TBL} | iconv -f utf8 -t cp932`"
+
+expdp ${ORAUID}/${ORAPWD} \
+    dumpfile=${DMP_DIROBJ}:${DMP_FILE} \
+    logfile=${DMP_DIROBJ}:expdp_$$.log \
+    tables="${TABLE_NAME}"             \
+    REUSE_DUMPFILES=y                  \
+    ENCRYPTION_PASSWORD=${ORAPWD}      \
+    $EXPDMPOPTS                        \
+    >>& ${DMP_FILEPATH}/expdp_std_$$.log < /dev/null
+set EXPSTS=$status
+
+#expdpの標準出力メッセージをログファイルに書き込む
+iconv -f cp932 -t utf8 ${DMP_FILEPATH}/expdp_std_$$.log >>& $LOG_FILE
+/bin/rm -f ${DMP_FILEPATH}/expdp_std_$$.log
+
+echo "$SHELLNAME:t : exportdp.src : expdp finish time = `date +%y/%m/%d:%H:%M:%S`" >> $LOG_FILE
+
+#--------------------------------------------------------------------------------
+# エラー判定
+#--------------------------------------------------------------------------------
+if ( -f $DMP_DIROBJPATH/expdp_$$.log ) then
+    ###暗号化せずにダンプ出力する場合は、下記Oracleメッセージを除去する
+    ###ORA-39173: 暗号化データがダンプ・ファイル・セットに暗号化されずに格納されました。
+
+    ##未暗号化警告を除去し判定する場合
+    ##set ORAMSG=`egrep -a "ORA-[0-9][0-9][0-9][0-9][0-9]" $DMP_DIROBJPATH/expdp_$$.log | egrep -v "ORA-39173"` 
+
+    #全てのOracleメッセージ有無で判定する場合
+    set ORAMSG=`egrep -a "ORA-[0-9][0-9][0-9][0-9][0-9]" $DMP_DIROBJPATH/expdp_$$.log`
+
+    if ( "${ORAMSG}" != "" )  then
+        # ORA- で始まるOracleメッセージが出力されてた時は、エラー扱いとする
+        /bin/rm -f $DMP_DIROBJPATH/expdp_$$.log
+        echo "$SHELLNAME:t : exportdp.src abnormal end : found ORACLE error message.">> $LOG_FILE
+        exit $ABEND
+    endif
+endif
+# 一時ログファイルを削除する
+/bin/rm -f $DMP_DIROBJPATH/expdp_$$.log
+
+if ( $EXPSTS != 0 )  then
+    #expdpに終了ステータスがゼロ以外の場合
+    echo "$SHELLNAME:t : exportdp.src abnormal end :status = $EXPSTS">> $LOG_FILE
+    exit $ABEND
+endif
+
+if ( ! -f ${DMP_DIROBJPATH}/${DMP_FILE} ) then
+    #出力ダンプファイルが存在しない場合
+    echo "$SHELLNAME:t : exportdp.src abnormal end : not exists dumpfile">> $LOG_FILE
+    exit $ABEND
+endif
+
+#--------------------------------------------------------------------------------
+# gzip圧縮
+#--------------------------------------------------------------------------------
+/bin/rm -f ${DMP_FILEPATH}/${DMP_FILE}.gz
+
+echo "gz圧縮前のダンプファイル" >> $LOG_FILE
+ls -l ${DMP_DIROBJPATH}/${DMP_FILE} >> $LOG_FILE
+
+#ファイルストレージからローカルディスクへ移動する
+mv ${DMP_DIROBJPATH}/${DMP_FILE} ${DMP_FILEPATH}/${DMP_FILE} >>& $LOG_FILE
+if ( $status != 0 ) then
+    echo "$SHELLNAME:t : exportdp.src abnormal end : mv error">> $LOG_FILE
+    exit $ABEND
+endif
+#gzip圧縮する
+gzip ${DMP_FILEPATH}/${DMP_FILE} >>& $LOG_FILE
+if ( $status != 0 ) then
+    echo "$SHELLNAME:t : exportdp.src abnormal end : gzip error">> $LOG_FILE
+    exit $ABEND
+endif
+
+echo "gz圧縮後ファイル" >> $LOG_FILE
+/bin/ls -l ${DMP_FILEPATH}/${DMP_FILE}.gz >> $LOG_FILE
+#--------------------------------------------------------------------------------
+# 終了
+#--------------------------------------------------------------------------------
+echo "$SHELLNAME:t : exportdp.src normal end"                 >> $LOG_FILE
+exit $NORMAL
+

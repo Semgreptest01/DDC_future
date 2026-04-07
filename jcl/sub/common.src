@@ -1,0 +1,185 @@
+# more common.src
+#----------------------------------------------------------------------#
+# job name      : ＤＢ Ｐｒｏｊｅｃｔ シェル共通処理サブモジュール
+# shell name    : common.src
+# parameters    : none
+# effect        : 共通シェル変数定義
+# author        : mizno
+# create date   : 1996.04.05 Initial Release.
+# update date   : 1996.04.08 下記記述をenv.srcに移行
+#                 set SUBSRCDIR="/test/jcl/sub"
+#                 1996.04.09 ディレクトリ名称をenv.srcより取り込む様に変更
+#                 1996.08.23 ORACLE-UID,PWDレングスパラメタ追加
+#                 1996.11.19 LOG_FILE名の変更(csh名.log.日付+ORACLEUID
+#                 1997.06.27 バスエラー回避策のため変数を追加定義
+#                           (処理はSQL*Net V2 IPC専用サーバー接続に変更
+#                            :setenv TWO_TASK funa3cvs1i 追加)
+#                 2005/8/18 センタ移転用修正
+#                            (LOG_DIR=$WKDIR/log→LOG_DIR=$WKDIR0/log)
+#                 2006/05/18 サーバーによる差異を統合
+#                 2009/01/13 バックアップログの削除にバグがあった為、修正
+#                 2013/06/20 ログバックアップ処理を全体的に見直し[PL1306_01(ログ出力仕様変更対応)]
+#                 2025/12/01 LMDC移行対応：ABENDの戻り値 9 から 51 に変更（JP1対応）
+#                                        ：nawkからgawkに変更
+# 必須シェル変数   : SUBSRCDIR = ｃｓｈサブソースディレクトリ名
+#               : LOG_DIR   = ログファイル作成ディレクトリ名称
+# memo          :
+#----------------------------------------------------------------------#
+# シェル共通変数定義
+#----------------------------------------------------------------------#
+#source $SUBSRCDIR/env.src
+set NORMAL=0                                    # 正常終了時ステータス
+#LMDC移行# Start
+#LMDC移行#set ABEND=9                                     # 異常終了時ステータス
+set ABEND=51                                    # 異常終了時ステータス
+#LMDC移行# end
+set ERR=999999                                  # SQL Loader 異常終了ステータス
+set SHELLNAME=$0                                # シェル名称
+#set ORAUID=$1                                  # オラクル・ユーザーＩＤ
+#set ORAUIDL=6                                  # オラクル・ユーザーＩＤ レングス
+#set ORAPWD=$2                                  # オラクル・パスワード
+#set ORAPWDL=6                                  # オラクル・パスワード レングス
+setenv ORAUID $1                                # オラクル・ユーザーＩＤ
+setenv ORAPWD $2                                # オラクル・パスワード
+#LMDC移行# Start
+#LMDC移行#setenv ORAUIDL `echo $ORAUID|/bin/nawk '{print length}'`
+#LMDC移行#setenv ORAPWDL `echo $ORAPWD|/bin/nawk '{print length}'`
+setenv ORAUIDL `echo $ORAUID|/bin/gawk '{print length}'`
+setenv ORAPWDL `echo $ORAPWD|/bin/gawk '{print length}'`
+#LMDC移行# end
+#set SH_ARGC=2                                  # Default パラメータ数
+set JOBNET=$3                                   # ネット名称
+set GRP_NAME=$3                                 # グループ名称
+set NET_NAME=$4                                 # ネット名称
+set SH_USAGE=" "                                # Default 使用法説明
+set WKNAME=$SHELLNAME:t                         # シェル名のpathを除く
+set WKNAME=$WKNAME:r                            # そこから拡張子を除く
+#set LOG_DIR=$WKDIR0/log                                # LOGディレクトリー
+#set LOG_DIR=$WKDIR/log                         # LOGディレクトリー
+set LOG_FILE=$LOG_DIR/$WKNAME.log.`date +%m%d`.$1      # LOGファイル名称
+set LOG_CHECK=$LOG_DIR/$WKNAME.log.\?\?`date +%d`.     # LOGファイル名称
+#setenv TWO_TASK funa3cvs1i                     # バスエラー対応変数
+
+# シェルパラメータ数チェック
+#
+if ( ! $?SH_ARGC ) then
+        set SH_ARGC=2                           # Default パラメータ数
+endif
+#
+#   パラメータ数チェック
+#
+if ( $#argv < $SH_ARGC ) then
+        echo $SHELLNAME:t ": パラメータが間違っています。[$argv[*]]"
+        echo "    usage : $SHELLNAME:t $SH_USAGE"
+        echo $SHELLNAME:t ": common.src 異常終了[$ABEND]"
+        exit $ABEND
+endif
+#
+# SID制御
+#
+if ( ! $?ORACLE_SID ) then
+        echo $SHELLNAME:t ": 環境変数 ORACLE_SID が未定義です。"
+else
+        echo $SHELLNAME:t ": 環境変数 ORACLE_SID=[$ORACLE_SID]"
+#LMDC移行# Start
+#LMDC移行#        set sid_low = `echo $ORACLE_SID | nawk '{print tolower($1)}'`
+        set sid_low = `echo $ORACLE_SID | gawk '{print tolower($1)}'`
+#LMDC移行# end
+        setenv sid_low $sid_low
+endif
+
+#-----------------------------------------------------------#
+#    同一日のLOG_FILEが存在する場合はリネーム(*1)して保存。当月以前のログならば削除
+##      (*1): ファイル名.HHMMに変更
+##
+echo $SHELLNAME:t ": ログファイル名＝ $LOG_FILE"
+if ( -e $LOG_FILE ) then
+        # 現在月とファイル月を取得
+        set r_month =   `date +%m`
+#LMDC移行# Start
+#LMDC移行#        set f_month=`echo "$LOG_FILE"|nawk '{cnt=split($1,arr,/\./);for(i=cnt; i>0;i--){ if(arr[i] == "log"){ printf("%02d",substr(arr[i+1],1,2)); exit; } } }'`
+        set f_month=`echo "$LOG_FILE"|gawk '{cnt=split($1,arr,/\./);for(i=cnt; i>0;i--){ if(arr[i] == "log"){ printf("%02d",substr(arr[i+1],1,2)); exit; } } }'`
+#LMDC移行# end
+        # 当日のログが存在する場合はリネームして待避する
+        if ( $r_month == $f_month ) then
+                set log_ext = `date +%H%M%S`
+                /bin/mv $LOG_FILE $LOG_FILE.$log_ext
+                /bin/touch $LOG_FILE #   ログファイルを初期化
+                echo $SHELLNAME:t ": 旧ログを保存しました。 [$LOG_FILE.$log_ext]" \
+                | tee -a $LOG_FILE
+                unset log_ext
+        endif
+endif
+unset f_month
+unset r_month
+
+#PL1306_01(ログ出力仕様変更対応) DEL START
+        # 当月以前の同一日付ログを全て削除する
+#        foreach CHKLOG ($LOG_CHECK*)
+#        set f_month=`echo "$CHKLOG"|nawk '{cnt=split($1,arr,/\./);for(i=cnt; i>0;i--){ if(arr[i] == "log"){ printf("%02d",substr(arr[i+1],1,2)); exit; } } }'`
+#                if ( $r_month == $f_month ) then
+#                    echo -n $SHELLNAME:t ": [旧ログ保存] " | tee -a $LOG_FILE
+#                    echo `ls -l $CHKLOG`|nawk '{printf("%-33s %s%s %s\n",$9,$6,$7,$8)}' \
+#                    | tee -a $LOG_FILE
+#                else
+#                    echo -n $SHELLNAME:t ": [旧ログ削除] " | tee -a $LOG_FILE
+#                    echo `ls -l $CHKLOG`|nawk '{printf("%-33s %s%s %s\n",$9,$6,$7,$8)}' \
+#                    | tee -a $LOG_FILE
+#                    /bin/rm $CHKLOG
+#                endif
+#        end
+#        unset CHKLOG
+#endif
+#PL1306_01(ログ出力仕様変更対応) DEL END
+#PL1306_01(ログ出力仕様変更対応) ADD START
+#①findコマンドで401日前の対象ログファイルをリスト化する
+set list = `find $LOG_DIR -name "*$WKNAME.log.????.$ORAUID.??????" -a ! -mtime -400 -a -type f -print`
+#②対象を全部削除するまでループする
+foreach CHKLOG ($list)
+    echo -n $SHELLNAME:t ": [旧ログ削除] " | tee -a $LOG_FILE
+#LMDC移行# Start
+#LMDC移行#    echo `ls -l $CHKLOG`|nawk '{printf("%-33s %s%s %s\n",$9,$6,$7,$8)}' \
+    echo `ls -l $CHKLOG`|gawk '{printf("%-33s %s%s %s\n",$9,$6,$7,$8)}' \
+#LMDC移行# end
+    | tee -a $LOG_FILE
+    /bin/rm $CHKLOG
+end
+unset list
+#PL1306_01(ログ出力仕様変更対応) ADD END
+#
+#   パラメータ一覧出力
+#
+echo $SHELLNAME:t ": argv[0] = $0" >>$LOG_FILE
+@ loopcnt = 1
+foreach myarg ( $argv[*] )
+    if( $loopcnt != 2 ) then
+        echo $SHELLNAME:t ": argv[$loopcnt] = $myarg" | tee -a $LOG_FILE
+    endif
+    @ loopcnt++
+end
+unset loopcnt
+#
+#  ユーザー指定ディレクトリ出力
+#
+if( $?WKDIR) then
+   echo $SHELLNAME:t ": ワークディレクトリ　     WKDIR  ＝ $WKDIR" | tee -a \
+   $LOG_FILE
+endif
+if( $?BKUPDIR) then
+   echo $SHELLNAME:t ": バックアップディレクトリ BKUPDIR＝ $BKUPDIR" | tee -a \
+   $LOG_FILE
+endif
+if( $?RDWKDIR) then
+   echo $SHELLNAME:t ": 参照用ワークディレクトリ RDWKDIR＝ $RDWKDIR" | tee -a \
+   $LOG_FILE
+endif
+if( $?IODIR) then
+   echo $SHELLNAME:t ": 入出力用ディレクトリ     IODIR＝ $IODIR" | tee -a \
+   $LOG_FILE
+endif
+#
+# 正常終了
+#
+echo "$SHELLNAME:t : start time = `date +%y/%m/%d:%H:%M:%S`" | tee -a $LOG_FILE
+exit $NORMAL
+#

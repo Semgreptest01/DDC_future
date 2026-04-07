@@ -1,0 +1,30 @@
+#
+#----------------------------------------------------------------------#
+# job name      : ＤＢ Ｐｒｏｊｅｃｔ シェル共通処理サブモジュール
+# shell name    : filechk.src
+# parameters    : none
+# effect        : ファイル存在チェック
+# author        : mizno
+# create date   : 1996.04.05 Initial Release.
+# update date   : 
+# 必須ｼｪﾙ変数   : SHELLNAME = シェル名称
+#               : LOG_FILE  = ログファイル名称
+#               : NORMAL    = 正常終了ステータス
+#               : ABEND     = 異常終了ステータス
+#               : CHECKFILE = チェック対象ファイル名
+# memo          : 
+#----------------------------------------------------------------------#
+# ファイル存在チェック
+#----------------------------------------------------------------------#
+if ( ! -r $CHECKFILE ) then
+    echo "$SHELLNAME:t : file <$CHECKFILE> not exist or can not read." \
+    >> $LOG_FILE
+	echo "" >> ${LOG_FILE}
+    exit $ABEND
+else
+    echo "$SHELLNAME:t : file <$CHECKFILE> exist." \
+    >> $LOG_FILE
+	echo "" >> ${LOG_FILE}
+endif
+exit $NORMAL
+#

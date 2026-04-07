@@ -1,0 +1,81 @@
+#
+#----------------------------------------------------------------------#
+# job name      : ＤＢ Ｐｒｏｊｅｃｔ シェル共通処理サブモジュール
+# shell name    : execsql2.src
+# parameters    : none
+# effect        : ＳＱＬプログラム実行＆ステータス・チェック
+# author        : FSIDIS O.Ogawara
+# create date   : 2008.05.26 Initial Release.
+# update date   : 
+#               : 
+# 必須ｼｪﾙ変数   : SHELLNAME = シェル名称
+#               : LOG_FILE  = ログファイル名称
+#               : NORMAL    = 正常終了ステータス
+#               : ABEND     = 異常終了ステータス
+#               : SQL_NAME  = SQLプログラム名称
+#               : SQL_PARM  = SQLプログラムパラメータ
+#               : LOG_DIR   = ログ出力先ディレクトリ名称（ワークで使用）
+# memo          : 
+# 03 2025/01/28   K.Shimada  LMDC移行対応
+# 04 2025/12/01   M.Yamamoto 店舗機器よりコピー(マージ済み)
+#----------------------------------------------------------------------#
+# ＳＱＬプログラム実行＆ステータス・チェック
+#----------------------------------------------------------------------#
+#
+# 開始時刻記録
+echo "$SHELLNAME:t : $SQL_NAME:t : start time = `date +%y/%m/%d:%H:%M:%S`" \
+                                                                >> $LOG_FILE
+#
+#LMDC移行 CHECK廃止#echo "$SHELLNAME:t : ORACLE available check         :sid = [$ORACLE_SID]" >> $LOG_FILE
+#LMDC移行 CHECK廃止#ps -ef |grep ora_ | grep $ORACLE_SID | egrep -v grep    >>/dev/null
+#LMDC移行 CHECK廃止#set sts1 = $status
+#LMDC移行 CHECK廃止#if ( $sts1 != 0 ) then
+#LMDC移行 CHECK廃止#  echo "$SHELLNAME:t : ORA-01034:ORACLE not available :sid = [$ORACLE_SID]" >> $LOG_FILE
+#LMDC移行 CHECK廃止#  echo "$SHELLNAME:t : please start oracle            :sid = [$ORACLE_SID]" >> $LOG_FILE
+#LMDC移行 CHECK廃止#  echo "$SHELLNAME:t : $SQL_NAME:t abnormal end :status = $sts1" >> $LOG_FILE
+#LMDC移行 CHECK廃止#  exit $ABEND
+#LMDC移行 CHECK廃止#else
+#LMDC移行 CHECK廃止#  echo "$SHELLNAME:t : ORACLE is available            :sid = [$ORACLE_SID]" >> $LOG_FILE
+#LMDC移行 CHECK廃止#endif
+
+#
+# ログ出力を一時ファイルに入力
+set ___TMP___LOG___=$LOG_DIR/$SHELLNAME:t.$ORAUID.`whoami`
+#LMDC移行 オプション追加#$SQL_NAME $SQL_PARM  > $___TMP___LOG___
+$SQL_NAME -L $SQL_PARM  > $___TMP___LOG___
+set sts = $status
+
+#LMDC移行 文字コード変更## 一時ファイルのログをSJIS->EUC変換した後、ログファイルへ出力
+#LMDC移行 文字コード変更##sjtoeuc $___TMP___LOG___                 >> $LOG_FILE
+#LMDC移行 文字コード変更#iconv -f SJIS -t EUC-JP $___TMP___LOG___ >> $LOG_FILE
+# 一時ファイルのログをSJIS->utf8変換した後、ログファイルへ出力
+iconv -f SJIS -t utf8 $___TMP___LOG___ >> $LOG_FILE
+# 一時ファイルを削除
+rm      $___TMP___LOG___
+#
+# 終了時刻記録
+echo "$SHELLNAME:t : $SQL_NAME:t : end   time = `date +%y/%m/%d:%H:%M:%S`" \
+                                                                >> $LOG_FILE
+# リターン値での判定
+if ( $sts != 0 )  then
+  echo "$SHELLNAME:t : $SQL_NAME:t abnormal end :status = $sts">> $LOG_FILE
+  exit $ABEND
+endif
+
+#
+# ＳＱＬプログラム実行結果判定
+set sts = `grep -c "ORA-0*[1-9]" $LOG_FILE`
+if ( $sts == 0 )  then
+    set sts = `grep -c "SP2-" $LOG_FILE`
+    if ( $sts == 0 )  then
+        echo "$SHELLNAME:t : $SQL_NAME:t normal end"                 >> $LOG_FILE
+        exit $NORMAL
+    else
+        echo "$SHELLNAME:t : $SQL_NAME:t abnormal end :status = $sts">> $LOG_FILE
+        exit $ABEND
+    endif
+else
+    echo "$SHELLNAME:t : $SQL_NAME:t abnormal end :status = $sts">> $LOG_FILE
+    exit $ABEND
+endif
+#

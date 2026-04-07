@@ -1,0 +1,66 @@
+#!/bin/csh
+#------------------------------------------------------------------------#
+# Shell-id      : 
+# Shell-名      : hnad_recv_cp.src
+# 機能          : DDC返品コスト削減　内部結合試験　受信ファイルコピー
+#------------------------------------------------------------------------#
+
+set IMPDIR = "/prod/wk001/hnad/bkup/jyusinorg"	# コピー元
+set CPSDIR = "/opt/ifp/data"					# コピー先
+
+echo "「rm: 照合パターンに合いません.」は無視してください。"
+
+rm -f $CPSDIR/STHN-AD00-DZMENU* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST221P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST222P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST223P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST224P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST225P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST226P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST227P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST229P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST231P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST232P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST233P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST234P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST235P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST240P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-SMM102P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-UET835P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-WJT081P001* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-WJT081P002* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-XMT733P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST204P* 2>/dev/null
+rm -f $CPSDIR/STHN-AD00-MST301P* 2>/dev/null
+
+cp $IMPDIR/STHN-AD00-DZMENU_date $CPSDIR/STHN-AD00-DZMENU_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST221P001_date $CPSDIR/STHN-AD00-MST221P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST222P001_date $CPSDIR/STHN-AD00-MST222P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST223P001_date $CPSDIR/STHN-AD00-MST223P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST224P001_date $CPSDIR/STHN-AD00-MST224P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST225P001_date $CPSDIR/STHN-AD00-MST225P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST226P001_date $CPSDIR/STHN-AD00-MST226P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST227P001_date $CPSDIR/STHN-AD00-MST227P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST229P001_date $CPSDIR/STHN-AD00-MST229P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST231P001_date $CPSDIR/STHN-AD00-MST231P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST232P001_date $CPSDIR/STHN-AD00-MST232P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST233P001_date $CPSDIR/STHN-AD00-MST233P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST234P001_date $CPSDIR/STHN-AD00-MST234P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST235P001_date $CPSDIR/STHN-AD00-MST235P001_`date "+%Y%m%d%H%M%S%3N"`
+###cp $IMPDIR/STHN-AD00-MST240P001_date $CPSDIR/STHN-AD00-MST240P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-SMM102P001_date $CPSDIR/STHN-AD00-SMM102P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-UET835P501_date $CPSDIR/STHN-AD00-UET835P501_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-XMT733P501_date $CPSDIR/STHN-AD00-XMT733P501_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST204P001_date $CPSDIR/STHN-AD00-MST204P001_`date "+%Y%m%d%H%M%S%3N"`
+cp $IMPDIR/STHN-AD00-MST301P001_date $CPSDIR/STHN-AD00-MST301P001_`date "+%Y%m%d%H%M%S%3N"`
+
+set TODAY = `date --date '1 days' +%Y%m%d`
+set WEEKDAY = `date --date '11 days' +%Y%m%d`
+sed -e "s/202512032025121420251203/$TODAY$WEEKDAY$TODAY/g" $IMPDIR/STHN-AD00-WJT081P001_date > $CPSDIR/STHN-AD00-WJT081P001_`date "+%Y%m%d%H%M%S%3N"`
+sed -e "s/202512032025121420251203/$TODAY$WEEKDAY$TODAY/g" $IMPDIR/STHN-AD00-WJT081P002_date > $CPSDIR/STHN-AD00-WJT081P002_`date "+%Y%m%d%H%M%S%3N"`
+
+sed -e "s/202601062026010820260302/20260106${TODAY}20260302/g" $IMPDIR/STHN-AD00-MST240P001_date > $IMPDIR/STHN-AD00-MST240P001_temp
+sed -e "s/20251028        20260427/20251028${TODAY}20260427/g" $IMPDIR/STHN-AD00-MST240P001_temp > $CPSDIR/STHN-AD00-MST240P001_`date "+%Y%m%d%H%M%S%3N"`
+rm -f $IMPDIR/STHN-AD00-MST240P001_temp
+
+exit 0
