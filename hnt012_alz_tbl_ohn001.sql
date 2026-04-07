@@ -1,0 +1,3 @@
+WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
+@/prod/ora/table/hnt012_alz_tbl.sql
+EXIT
