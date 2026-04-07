@@ -1,0 +1,32 @@
+LOAD DATA
+ APPEND INTO TABLE HNT_ベンダー納品エリア
+ (
+ ベンダーコード                           POSITION(1:6) CHAR,
+ 納品エリアコード                         POSITION(7:12) CHAR,
+ 有効終了日                               POSITION(13:20) DATE,
+ 有効開始日                               POSITION(21:28) DATE,
+ 有効フラグ                               POSITION(29:30) CHAR,
+ 販計連携処理状況区分                     POSITION(31:32) CHAR,
+ 処理区分                                 POSITION(33:34) CHAR,
+ 物理削除日                               POSITION(35:42) DATE "YYYYMMDD",
+ コピー処理日                             POSITION(43:50) DATE "YYYYMMDD",
+ コピー処理状況区分                       POSITION(51:52) CHAR,
+ 物理削除区分                             POSITION(53:54) CHAR,
+ 作成者氏名コード                         POSITION(55:62) CHAR,
+ 作成者氏名                               POSITION(63:92) CHAR,
+ 作成者部署コード                         POSITION(93:98) CHAR,
+ 作成者部署名                             POSITION(99:138) CHAR,
+ 作成プログラムＩＤ                       POSITION(139:178) CHAR,
+ 作成日時                                 POSITION(179:192) DATE "YYYYMMDDHH24MISS",
+ オンライン更新者氏名コード               POSITION(193:200) CHAR,
+ オンライン更新者氏名                     POSITION(201:230) CHAR,
+ オンライン更新者部署コード               POSITION(231:236) CHAR,
+ オンライン更新者部署名                   POSITION(237:276) CHAR,
+ オンライン更新プログラムＩＤ             POSITION(277:316) CHAR,
+ オンライン更新日時                       POSITION(317:330) DATE "YYYYMMDDHH24MISS",
+ バッチ更新プログラムＩＤ                 POSITION(331:370) CHAR,
+ バッチ更新日時                           POSITION(371:384) DATE "YYYYMMDDHH24MISS",
+ ロック連番                               POSITION(385:388) ZONED NULLIF ロック連番=BLANKS,
+ 削除区分                                 POSITION(389:390) CHAR,
+ 更新端末ＩＤ                             POSITION(391:420) CHAR
+ )
