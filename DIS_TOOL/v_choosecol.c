@@ -112,7 +112,12 @@ main(int argc,char *argv[])
         char_cnt = 0;
 
         /*  表示方法の切り出し                                              */
-        fld_point = atoi(strtok(argv[2], "."));
+        key_point = strtok(argv[2], ".");
+        if (key_point == NULL) {
+            fprintf(stderr, "パラメータ指定が異常です。\n");
+            return ARG_ERR;
+        }
+        fld_point = atoi(key_point);
         if (NULL != (key_point = strtok(NULL, "."))){
             char_s = atoi(key_point);
             if (NULL != (key_point = strtok(NULL, "."))){
