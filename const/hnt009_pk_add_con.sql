@@ -1,0 +1,4 @@
+ALTER TABLE HNT_ＤＥＰＴ ADD(CONSTRAINT HNT009_PK PRIMARY KEY(
+社コード,
+ＤＥＰＴコード,
+有効終了日)

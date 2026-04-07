@@ -1,0 +1,3 @@
+ALTER TABLE HNT_納品エリア ADD(CONSTRAINT HNT029_PK PRIMARY KEY(
+納品エリアコード,
+有効終了日)
