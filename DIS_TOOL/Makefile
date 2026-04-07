@@ -1,0 +1,41 @@
+#
+# 旧DIS_TOOL系Makefile 
+#
+# 使い方
+#   1)ライブラリ及びmainプログラム全て(v_で始まるもの)のmakeを行う
+#     make all
+#
+#   2)ライブラリだけmakeを行う
+#     make
+#
+#   3)個別にコンパイル または 正規ＰＧ以外(v_で始まらない)
+#     make 【ターゲット名(ソースの.cを除いたもの】
+#
+# v_r1match.c   : -DNEW_TOKEN
+# v_r2match.c   : -DNEW_TOKEN
+# v_r3match.c   : -DNEW_TOKEN
+# v_s1match.c   : -DNEW_TOKEN
+# v_s2match.c   : -DNEW_TOKEN
+# v_s3match.c   : -DNEW_TOKEN
+# v_choosecol.c : -DEXTERNAL_TABLE -DNEW_GETFMT
+# v_dividefile.c  : -DNEW_FOPENM -lz
+# v_matrix.c    : -DNEW_MATRIX
+# v_sumup.c     : -DNEW_SUMUP -DNEW_ADJUST
+
+
+CFLAGS = -Wall -I./inc -DNEW_TOKEN -DEXTERNAL_TABLE -DNEW_GETFMT -DNEW_FOPENM -DNEW_MATRIX -DNEW_SUMUP -DNEW_ADJUST -g3 -O2
+LDFLAGS = -L./
+LDLIBS = -ldistool -lz
+
+libdistool.a : GetErrMsg.o CheckRjoinArg.o LoadMasterFile.o CompareMasterKey.o
+	ar rv libdistool.a GetErrMsg.o CheckRjoinArg.o LoadMasterFile.o CompareMasterKey.o
+
+GetErrMsg.o : inc/libdistool.inc
+CheckRjoinArg.o : inc/libdistool.inc
+LoadMasterFile.o : inc/libdistool.inc
+CompareMasterKey.o : inc/libdistool.inc
+
+all : $(basename $(wildcard v_*.c))
+
+% : %.c libdistool.a inc/libdistool.inc
+	$(CC) $(CFLAGS) $(CPPFLAGS) $< $(LDFLAGS) $(LDLIBS) -o $@
