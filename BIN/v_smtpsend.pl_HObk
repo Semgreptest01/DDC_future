@@ -1,0 +1,122 @@
+#!/usr/bin/perl
+################################################################################
+# 
+# システム名：横断集計
+# 
+# プログラム名：v_smtpsend.pl
+#
+# 機能概要：
+#   ＳＭＴＰにてメールサーバに接続しメールを送信する
+#
+# 作成日：2014/11/18
+#
+# 作成者：K.Shimada
+#
+# 修正履歴：
+#   yyyy/mm/dd K.Shimadaxxxxxx 
+#     ＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮ
+#     ＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮＮ
+#
+################################################################################
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/lib";
+
+use utf8;
+use Getopt::Long;
+use MIME::Entity;
+use Encode;
+use Net::SMTP;
+
+print STDERR "[INFO]$0 start\n";
+################################################################################
+# 引数解析
+################################################################################
+my $Host = "";
+my $From = "";
+my $To = "";
+my $Subject = "";
+my @Attach = ();
+my $nosend=0;
+
+GetOptions(
+    'host=s'    => \$Host,
+    'from=s'    => \$From,
+    'to=s'      => \$To,
+    'subject=s' => \$Subject,
+    'attach=s'  => \@Attach,
+    'nosend'    => \$nosend,
+);
+
+die("[ERROR]Missing Host parameter.\n")    if $Host eq "";
+die("[ERROR]Missing From parameter.\n")    if $From eq "";
+die("[ERROR]Missing To parameter.\n")      if $To eq "";
+die("[ERROR]Missing Subject parameter.\n") if $Subject eq "";
+foreach my $var(@Attach){
+    die("[ERROR]Missing Attach parameter\n") if ! -r $var;
+}
+
+
+my $argfile = "-";
+$argfile = $ARGV[0]                        if @ARGV == 1;
+open (my $DATAFILE ,"< $argfile")  or die("[ERROR]can't open file.($argfile)\n");
+my $Body = do { local( $/ ) ; <$DATAFILE> } ;
+
+################################################################################
+# メール作成
+################################################################################
+#メールアドレスのエンコードは行わないので、メールアドレスに日本語使用不可
+my $s = $From;
+my $r = $To;
+
+# ヘッダーとボディ
+my $mail = MIME::Entity->build(
+    From    => $s,
+    To      => $r,
+    Subject => encode('MIME-HEADER-ISO_2022_JP',$Subject),
+    Type => 'text/plain; charset=utf-8',
+    Encoding => 'base64',
+    Data => $Body,
+) || die("[ERROR]MIME::Entity->build NG\n");
+
+# 添付ファイル
+foreach my $var(@Attach){
+    $mail->attach(
+        Path => $var,
+        Type => 'application/octet-stream',
+        Encoding => 'Base64',
+    ) || die("[ERROR]MIME::Entity->attach NG\n");
+}
+
+print STDERR "[INFO]host:$Host from:$From to:$To subject:$Subject\n";
+################################################################################
+# デバック時は、実際にメールを送信せず終了
+################################################################################
+if ( $nosend ){
+    print STDERR "=== no send ===\n";
+    print STDERR $mail->stringify();
+    print STDERR "[INFO]$0 mail no send : normal end\n";
+    exit 0
+}
+################################################################################
+# ＳＭＴＰ送信
+################################################################################
+# Net::SMTPのデバック情報を出力する時は、Debug=>1 とする。
+my $smtp = Net::SMTP->new($Host ,Debug=>1) || die("[ERROR]smtp server connect NG\n");
+
+$smtp->mail($s); #from
+$smtp->to( split(/,/,$r) );   #to
+
+$smtp->data();
+$smtp->datasend($mail->stringify);
+$smtp->dataend();
+
+$smtp->quit;
+
+################################################################################
+# 終了
+################################################################################
+print STDERR "[INFO]$0 normal end\n";
+exit 0
