@@ -1,0 +1,763 @@
+#!/bin/bash -xv
+source `dirname $0`/../.bashrc >& /dev/null
+#
+# CLEAR.DAY.SYSTEMMENTE >> 不要過去ファイルを消去する。(全マシン共通)
+# Usage : CLEAR.DAY.SYSTEMMENTE
+#
+# 17:00に起動
+#
+# CREATED  BY : vinx 2014/12/15
+# MODIFIED BY : vinx 2015/03/13    SA対応にて RCV/HI 消去追加
+# MODIFIED BY : LAWSON 2015/07/27  ED1507_07（過去データ削除・バックアップ処理対象追加対応）
+#                                  削除対象追加 DATA/URINOGASHI CHUKAN/JIKAN_KIKAILOSS_DAY2 DATA_HPSG HPSG
+# MODIFIED BY : LAWSON 2015/08/18  ED1507_07（過去データ削除・バックアップ処理対象追加対応）
+#                                  削除対象追加 CHUKAN/JIKAN_KIKAILOSS_DAY2配下のERRORファイル
+# MODIFIED BY : LAWSON 2016/01/26  ED1511_05（売り逃しIF欠落（20151112））
+#                                  削除対象追加 CHUKAN/JIKAN_KIKAILOSS_DAY2配下のWARNINGファイル
+# MODIFIED BY : LAWSON 2016/02/04  ED1601_05（取引明細欠落スキップ対応）
+#                                  削除対象追加 DATA/JOURNAL配下のERRORファイル
+# MODIFIED BY : LAWSON 2016/06/09  ED1606_01（過去作成ファイル削除対応）
+#                                  削除対象追加 KIKAILOSS/RIREKI2L配下の過去ファイル
+# MODIFIED BY : LAWSON 2016/07/08  ED1607_03（機会ロスPDF中間データ送信処理の内部エラーに伴う削除対応）
+#                                  削除対象除去 SND/SLIM_KIKAILOSS_SNDWK（ディレクトリを削除するため）
+# MODIFIED BY : LAWSON 2017/09/14  ED1709_03／CH-2017-00728（サーバ間コピーによる先行後続制御仕様共通化対応）
+#                                  削除対象除去 OUTPUT/*****/RCV_JOB_CTRL（ディレクトリを削除するため）
+# MODIFIED BY : LAWSON 2019/10/04  ED1910_32567（CH-2019-00467_イニシャルパラメータチェックからの出力データ未削除）
+#                                  削除対象追加 CHUKAN/MASTER_YOKYU（チェック用ファイルが残り続けていたため）
+# MODIFIED BY : LAWSON 2022/01/12  0198_計画終了システム改善対応
+#                                  削除対象追加 DATA_HPSG/HNT_KEIKAKUSYURYO_SYANAI（新規処理追加のため）
+# MODIFIED BY : vinx   2025/11/17  LMDC移行
+#                                  JP1対応、プロセスクリア、INITIAL・SAISO・CHUKAN・OUTPUT・KIKAILOSS・SND・IFPHOME・ERROR_PDFへの処理廃止
+
+
+# ホームディレクトリを定義
+##
+##
+
+#LMDC移行## ログ処理変更 START
+# 走行ログの記録
+#LMDC移行#echo "${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$" > /dev/null
+#LMDC移行#exec 2> ${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$
+exec 2> /dev/null
+source ${PROD_DIR}/SHELL/OUTLOG.INI
+exec 2> ${LOG_FILE}
+#LMDC移行## ログ処理変更 END
+
+########################
+# 変数の定義
+########################
+tmp=${PROD_DIR}/tmp/$$
+today=$(date +%Y%m%d)
+yobi=$(v_ldate $today | v_choosecol 2)
+datad=${BKUP_DIR}
+# A系の正かどうか（ストレージを使えるかどうか）
+#LMDC移行#host=0
+#LMDC移行#[ $(v_server_ctrl.pl -host $HOSTNAME -print msflg) = "M" -a $(v_server_ctrl.pl -host $HOSTNAME -print job) = "odan_a" ] && host=1
+host=1
+
+
+# /tmp 下の1日以上前の一時ファイルを消す  : プロセスID-* の形式のものを消去
+cd ${PROD_DIR}/tmp
+find . -mtime +0 -name '[0-9]*-*' -type f -exec rm -f {} \;
+
+
+#LMDC移行## JP1対応　不要処理コメントアウト START
+# ${PROD_DIR}/JOB_CTRL : 10日以上前のジョブＣＴＲＬは消去する。
+#LMDC移行#cd ${PROD_DIR}/JOB_CTRL
+#LMDC移行#find . -mtime +9 -type f -exec rm -f {} \;
+#LMDC移行## JP1対応　不要処理コメントアウト END
+
+
+# ${PROD_DIR}/LOG/MESSAGES_APL : バックアップファイルを作成し、0バイトにする
+cat ${PROD_DIR}/LOG/MESSAGES_APL >> ${PROD_DIR}/LOG/MESSAGES_APL.$today
+:> ${PROD_DIR}/LOG/MESSAGES_APL
+
+
+#LMDC移行## JP1対応　不要処理コメントアウト START
+# ${PROD_DIR}/LOG/UPCNT
+#LMDC移行#if [ $yobi = "7" ]; then
+#LMDC移行#  :> ${PROD_DIR}/LOG/UPCNT
+#LMDC移行#fi
+#LMDC移行## JP1対応　不要処理コメントアウト END
+
+
+# ${PROD_DIR}/LOG : 1日以上前のログは圧縮する。
+cd ${PROD_DIR}/LOG
+#LMDC移行## ログ出力変更対応 START
+#LMDC移行#find . -mtime +0 -type f | grep "./LOG." | sed '/.gz$/d' | xargs gzip -f
+find . -mtime +0 -type f | grep "./*.log.*" | sed '/.gz$/d' | xargs gzip -f
+#LMDC移行## ログ出力変更対応 END
+# 10日以上前のログは消去する。
+find . -mtime +9 -type f -exec rm -f {} \;
+
+#LMDC移行## JP1対応　不要処理コメントアウト START
+# ${PROD_DIR}/BACKUP : シェル類とcrontabのバックアップ：100日以上前を削除。
+#LMDC移行#cd ${PROD_DIR}/BACKUP
+#LMDC移行#find . -mtime +50 -type f -exec rm -f {} \;
+#LMDC移行## JP1対応　不要処理コメントアウト END
+
+
+#LMDC移行## JP1対応　不要処理コメントアウト START
+#LMDC移行## lawson ユーザのプロセスはすべてクリアする（当日STARTは残す）
+#LMDC移行#kill -9 $(ps aux | awk '$1=="lawson"&&$9!~/^[0-9][0-9]:[0-9][0-9]$/{print $2}' | v_horiarray pk=END)
+#LMDC移行## JP1対応　不要処理コメントアウト END
+
+
+####################################
+# 横断集計 古いデータの削除
+####################################
+# RCVディレクトリ
+## バックアップリスト格納ディレクトリ
+cd ${PROD_DIR}/RCV/BACKUPLIST
+find . -mtime +6 -type f -exec rm -f {} \;
+
+
+#LMDC移行## JP1対応　不要処理コメントアウト START
+#LMDC移行### 受信ジョブＣＴＲＬ格納ディレクトリ
+#LMDC移行#cd ${PROD_DIR}/RCV/RCV_JOB_CTRL
+#LMDC移行#find . -mtime +6 -type f -exec rm -f {} \;
+#LMDC移行## JP1対応　不要処理コメントアウト END
+
+
+
+## IFP受信ファイル
+## A系正の場合は全ファイルをストレージに移動
+## その他の場合は3日以上経過したファイルを削除
+cat << FIN > $tmp-rcv_dir
+DB 1
+MS 1
+PL 1
+SB 1
+UL 1
+WB 1
+WJ 1
+HI 1
+FIN
+
+cat $tmp-rcv_dir |
+while read dir kikan ;do
+  [ ! -d ${PROD_DIR}/RCV/$dir ] && continue;
+  cd ${PROD_DIR}/RCV/$dir
+
+  # A系正の場合は全ファイルをストレージに移動
+  if [ $host = "1" ]; then
+    find . -type f -exec mv -f {} $datad/RCV/$dir/{} \;
+#LMDC移行## JP1対応　不要処理コメントアウト START
+#LMDC移行#  # その他の場合は3日以上経過したファイルを残し削除
+#LMDC移行#  else
+#LMDC移行#    find . -mtime +$kikan -type f -exec rm -f {} \;
+#LMDC移行# JP1対応　コメントアウト END
+  fi
+done
+
+
+## ストレージに移動したIFP受信ファイル
+## A系正の場合は90日以上経過したファイルを削除
+cat << FIN > $tmp-data1_dir
+DB 90
+MS 90
+PL 90
+SB 90
+UL 90
+WB 90
+WJ 90
+HI 90
+FIN
+
+if [ $host = "1" ]; then
+  cat $tmp-data1_dir |
+  while read dir kikan ;do
+    [ ! -d $datad/RCV/$dir ] && continue;
+    cd $datad/RCV/$dir
+    find . -mtime +$kikan -type f -exec rm -f {} \;
+  done
+fi
+
+
+#LMDC移行## JP1対応　不要処理コメントアウト START
+#LMDC移行##HANBAIを追加20101216_kato
+#LMDC移行## 取込データ
+#LMDC移行### 日別ファイルは35 or 70日以上経過したファイルを削除
+#LMDC移行#cat << FIN > $tmp-data_day
+#LMDC移行#BIN_TIME       70
+#LMDC移行#BOOK           70
+#LMDC移行#HANBAI_HAIKI   35
+#LMDC移行#JOURNAL        35
+#LMDC移行#KASETSUHANBAI  70
+#LMDC移行#KIHON_SKU      70
+#LMDC移行#KYAKU          70
+#LMDC移行#KYAKUSO_HANBAI 35
+#LMDC移行#NOHINSU        70
+#LMDC移行#SINAGIRE_TIME  70
+#LMDC移行#ZAIKO          35
+#LMDC移行#HANBAI         70
+#LMDC移行#TENKI          70
+#LMDC移行#URINOGASHI     70
+#LMDC移行#FIN
+#LMDC移行#
+#LMDC移行#cat $tmp-data_day |
+#LMDC移行#while read dir kikan ;do
+#LMDC移行#  [ ! -d ${PROD_DIR}/DATA/$dir ] && continue;
+#LMDC移行#  cd ${PROD_DIR}/DATA/$dir
+#LMDC移行#  ls [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].gz |
+#LMDC移行#  v_vertarray pk=END           |
+#LMDC移行#  sed 's/.gz//g' |
+#LMDC移行#  while read day ; do
+#LMDC移行#    if [ $day -lt $(v_ldate $today/-$kikan) ]; then
+#LMDC移行#      rm -f $day.gz
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#done
+#LMDC移行#
+#LMDC移行### 2016/02/04追加 START
+#LMDC移行### 日別エラーファイル用
+#LMDC移行#cat << FIN > $tmp-data_day_error
+#LMDC移行#JOURNAL        35
+#LMDC移行#FIN
+#LMDC移行#
+#LMDC移行#cat $tmp-data_day_error |
+#LMDC移行#while read dir kikan ;do
+#LMDC移行#  [ ! -d ${PROD_DIR}/DATA/$dir ] && continue;
+#LMDC移行#  cd ${PROD_DIR}/DATA/$dir
+#LMDC移行#  ls [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]ERROR.gz |
+#LMDC移行#  v_vertarray pk=END           |
+#LMDC移行#  sed 's/ERROR.gz//g' |
+#LMDC移行#  while read day ; do
+#LMDC移行#    if [ $day -lt $(v_ldate $today/-$kikan) ]; then
+#LMDC移行#      rm -f ${day}ERROR.gz
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#done
+#LMDC移行### 2016/02/04追加 END
+#LMDC移行#
+#LMDC移行### 週別ファイルは10週以上経過したファイルを削除
+#LMDC移行#cat << FIN > $tmp-data_week
+#LMDC移行#SINAZOROE 10
+#LMDC移行#FIN
+#LMDC移行#
+#LMDC移行#cat $tmp-data_week |
+#LMDC移行#while read dir kikan ;do
+#LMDC移行#  [ ! -d ${PROD_DIR}/DATA/$dir ] && continue;
+#LMDC移行#  cd ${PROD_DIR}/DATA/$dir
+#LMDC移行#  ls [0-9][0-9][0-9][0-9][0-9][0-9].gz |
+#LMDC移行#  v_vertarray pk=END           |
+#LMDC移行#  sed 's/.gz//g' |
+#LMDC移行#  while read week ; do
+#LMDC移行#    if [ $week -lt $(v_ldate $(v_ldate $today | v_choosecol 3)/-$kikan) ]; then
+#LMDC移行#      rm -f $week.gz
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#done
+#LMDC移行#
+#LMDC移行#
+#LMDC移行### イニシャル、再送要求データ
+#LMDC移行### 70日以上経過したファイルを削除
+#LMDC移行#cd ${PROD_DIR}/DATA/INITIAL
+#LMDC移行#find . -mtime +70 -type f -exec rm -f {} \;
+#LMDC移行#cd ${PROD_DIR}/DATA/SAISO
+#LMDC移行#find . -mtime +70 -type f -exec rm -f {} \;
+#LMDC移行#
+#LMDC移行#
+#LMDC移行## 中間データ
+#LMDC移行### 日別ファイルは7 or 14 or 35 or 70日以上経過したファイルを削除
+#LMDC移行#cat << FIN > $tmp-chukan_day
+#LMDC移行#DR_UNEI_SISYA       70
+#LMDC移行#EIGYO_TEN_DAY       14
+#LMDC移行#HANBAIDAKA_DAY      14
+#LMDC移行#JIKAN_KIKAILOSS_DAY 70
+#LMDC移行#SINAGIRE_KYAKU_DAY  70
+#LMDC移行#TORIATUKAI_TEN_DAY  35
+#LMDC移行#CUT_SYOHIN_DAY      35
+#LMDC移行#SYOHIN_BIN_DAY      70
+#LMDC移行#MASTER_YOKYU         7
+#LMDC移行#JIKAN_KIKAILOSS_DAY2 70
+#LMDC移行#FIN
+#LMDC移行#
+#LMDC移行#cat $tmp-chukan_day |
+#LMDC移行#while read dir kikan ;do
+#LMDC移行#  [ ! -d ${PROD_DIR}/CHUKAN/$dir ] && continue
+#LMDC移行#  cd ${PROD_DIR}/CHUKAN/$dir
+#LMDC移行#  ls *[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].gz |
+#LMDC移行#  v_vertarray pk=END           |
+#LMDC移行#  sed 's/.gz//g' |
+#LMDC移行#  v_choosecol 1.1.8     |
+#LMDC移行#  while read day ; do
+#LMDC移行#    if [ $day -lt $(v_ldate $today/-$kikan) ]; then
+#LMDC移行#      rm -f $day.*gz
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#done
+#LMDC移行#
+#LMDC移行## 2019/10/04 追加 START ED1910_32567（CH-2019-00467_イニシャルパラメータチェックからの出力データ未削除）
+#LMDC移行#cat << FIN > $tmp-chukan_day_yokyu
+#LMDC移行#MASTER_YOKYU  7
+#LMDC移行#FIN
+#LMDC移行#
+#LMDC移行#cat $tmp-chukan_day_yokyu |
+#LMDC移行#while read dir kikan ;do
+#LMDC移行#  [ ! -d ${PROD_DIR}/CHUKAN/$dir ] && continue
+#LMDC移行#  cd ${PROD_DIR}/CHUKAN/$dir
+#LMDC移行#  ls *[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9] |
+#LMDC移行#  v_vertarray pk=END           |
+#LMDC移行#  sed 's/YOKYU_CHECK.//g' |
+#LMDC移行#  v_choosecol 1.1.8     |
+#LMDC移行#  while read day ; do
+#LMDC移行#    if [ $day -lt $(v_ldate $today/-$kikan) ]; then
+#LMDC移行#      rm -f *$day
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#done
+#LMDC移行##  2019/10/04 追加 END ED1910_32567（CH-2019-00467_イニシャルパラメータチェックからの出力データ未削除）
+#LMDC移行#
+#LMDC移行### 2015/08/18追加 START
+#LMDC移行### 日別エラーファイル用
+#LMDC移行#cat << FIN > $tmp-chukan_day_error
+#LMDC移行#JIKAN_KIKAILOSS_DAY2 70
+#LMDC移行#FIN
+#LMDC移行#
+#LMDC移行#cat $tmp-chukan_day_error |
+#LMDC移行#while read dir kikan ;do
+#LMDC移行#  [ ! -d ${PROD_DIR}/CHUKAN/$dir ] && continue
+#LMDC移行#  cd ${PROD_DIR}/CHUKAN/$dir
+#LMDC移行#  ls *[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]ERROR.gz |
+#LMDC移行#  v_vertarray pk=END           |
+#LMDC移行#  sed 's/ERROR.gz//g' |
+#LMDC移行#  v_choosecol 1.1.8     |
+#LMDC移行#  while read day ; do
+#LMDC移行#    if [ $day -lt $(v_ldate $today/-$kikan) ]; then
+#LMDC移行#      rm -f ${day}ERROR.gz
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#done
+#LMDC移行### 2015/08/18追加 END
+#LMDC移行#
+#LMDC移行### 2016/01/26追加 START
+#LMDC移行### 日別警告ファイル用
+#LMDC移行#cat << FIN > $tmp-chukan_day_warning
+#LMDC移行#JIKAN_KIKAILOSS_DAY2 70
+#LMDC移行#FIN
+#LMDC移行#
+#LMDC移行#cat $tmp-chukan_day_warning |
+#LMDC移行#while read dir kikan ;do
+#LMDC移行#  [ ! -d ${PROD_DIR}/CHUKAN/$dir ] && continue
+#LMDC移行#  cd ${PROD_DIR}/CHUKAN/$dir
+#LMDC移行#  ls *[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]WARNING.gz |
+#LMDC移行#  v_vertarray pk=END           |
+#LMDC移行#  sed 's/WARNING.gz//g' |
+#LMDC移行#  v_choosecol 1.1.8     |
+#LMDC移行#  while read day ; do
+#LMDC移行#    if [ $day -lt $(v_ldate $today/-$kikan) ]; then
+#LMDC移行#      rm -f ${day}WARNING.gz
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#done
+#LMDC移行### 2016/01/26追加 END
+#LMDC移行#
+#LMDC移行### 週別ファイルは5 or 10週以上経過したファイルを削除
+#LMDC移行#cat << FIN > $tmp-chukan_week
+#LMDC移行#EIGYO_TEN_WEEK      5
+#LMDC移行#HANBAIDAKA_WEEK     5
+#LMDC移行#KIHON_SKU_LIST      10
+#LMDC移行#KYAKU_WEEK          5
+#LMDC移行#TORIATUKAI_TEN_WEEK 5
+#LMDC移行#FIN
+#LMDC移行#
+#LMDC移行#cat $tmp-chukan_week |
+#LMDC移行#while read dir kikan ;do
+#LMDC移行#  [ ! -d ${PROD_DIR}/CHUKAN/$dir ] && continue
+#LMDC移行#  cd ${PROD_DIR}/CHUKAN/$dir
+#LMDC移行#  ls [0-9][0-9][0-9][0-9][0-9][0-9].gz |
+#LMDC移行#  v_vertarray pk=END           |
+#LMDC移行#  sed 's/.gz//g' |
+#LMDC移行#  while read week ; do
+#LMDC移行#    if [ $week -lt $(v_ldate $(v_ldate $today | v_choosecol 3)/-$kikan) ]; then
+#LMDC移行#      rm -f $week.gz
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#done
+#LMDC移行#
+#LMDC移行#
+#LMDC移行## 集計データ
+#LMDC移行### 日別ファイルは7 or 425日以上経過したファイルを削除
+#LMDC移行### 週次ファイルは、49日以上経過したファイルを削除。(６週間分ファイルを保持)
+#LMDC移行#
+#LMDC移行#cat << FIN > $tmp-out_day
+#LMDC移行#S088101 425
+#LMDC移行#EDG100P 7
+#LMDC移行#EDG101P 49
+#LMDC移行#EDG105P 49
+#LMDC移行#EDG107P 49
+#LMDC移行#FIN
+#LMDC移行#
+#LMDC移行#cat $tmp-out_day |
+#LMDC移行#while read dir kikan ;do
+#LMDC移行#  [ ! -d ${PROD_DIR}/OUTPUT/$dir ] && continue
+#LMDC移行#  cd ${PROD_DIR}/OUTPUT/$dir
+#LMDC移行#  ls [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].gz |
+#LMDC移行#  v_vertarray pk=END           |
+#LMDC移行#  sed 's/.gz//g' |
+#LMDC移行#  while read day ; do
+#LMDC移行#    if [ $day -lt $(v_ldate $today/-$kikan) ]; then
+#LMDC移行#      rm -f $day.gz
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#done
+#LMDC移行#
+#LMDC移行#
+#LMDC移行### 週別ファイルは3 or 75週以上経過したファイルを削除
+#LMDC移行#cat << FIN > $tmp-out_week
+#LMDC移行#S081101 3
+#LMDC移行#S081102 3
+#LMDC移行#S081301 3
+#LMDC移行#S081302 3
+#LMDC移行#S081303 3
+#LMDC移行#S081304 3
+#LMDC移行#S081501 3
+#LMDC移行#S081502 3
+#LMDC移行#S081503 3
+#LMDC移行#S081504 3
+#LMDC移行#S088001 75
+#LMDC移行#S088201 75
+#LMDC移行#S213901 3
+#LMDC移行#FIN
+#LMDC移行#
+#LMDC移行#cat $tmp-out_week |
+#LMDC移行#while read dir kikan ;do
+#LMDC移行#  [ ! -d ${PROD_DIR}/OUTPUT/$dir ] && continue
+#LMDC移行#  cd ${PROD_DIR}/OUTPUT/$dir
+#LMDC移行#  ls [0-9][0-9][0-9][0-9][0-9][0-9].gz |
+#LMDC移行#  v_vertarray pk=END           |
+#LMDC移行#  sed 's/.gz//g' |
+#LMDC移行#  while read week ; do
+#LMDC移行#    if [ $week -lt $(v_ldate $(v_ldate $today | v_choosecol 3)/-$kikan) ]; then
+#LMDC移行#      rm -f $week.gz
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#done
+#LMDC移行#
+#LMDC移行#
+#LMDC移行## 2017/09/14 LAWSON DEL ED1709_03／CH-2017-00728 削除ディレクトリの処理を停止 START
+#LMDC移行#### 機会ロスコピージョブＣＴＲＬ
+#LMDC移行#### 70日以上経過したファイルを削除
+#LMDC移行##cd ${PROD_DIR}/OUTPUT/S088101/RCV_JOB_CTRL
+#LMDC移行##find . -mtime +70 -type f -exec rm -f {} \;
+#LMDC移行##cd ${PROD_DIR}/OUTPUT/S088201/RCV_JOB_CTRL
+#LMDC移行##find . -mtime +70 -type f -exec rm -f {} \;
+#LMDC移行##cd ${PROD_DIR}/OUTPUT/EDG100P/RCV_JOB_CTRL
+#LMDC移行##find . -mtime +70 -type f -exec rm -f {} \;
+#LMDC移行## 2017/09/14 LAWSON DEL ED1709_03／CH-2017-00728 削除ディレクトリの処理を停止 END
+#LMDC移行#
+#LMDC移行## 機会ロスPDF
+#LMDC移行#if [ -d ${PROD_DIR}/KIKAILOSS/PDF/SUMI ]; then
+#LMDC移行#  cd ${PROD_DIR}/KIKAILOSS/PDF/SUMI
+#LMDC移行#  ls -d [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].tgz |
+#LMDC移行#  v_vertarray pk=END |
+#LMDC移行#  while read daytime ; do
+#LMDC移行#    if [ ${daytime:0:8} -lt $today ]; then
+#LMDC移行#      rm -rf $daytime
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#fi
+#LMDC移行#
+#LMDC移行## 機会ロスPDF(簡易版)
+#LMDC移行#if [ -d ${PROD_DIR}/KIKAILOSS/PDF_KANI/SUMI ]; then
+#LMDC移行#  cd ${PROD_DIR}/KIKAILOSS/PDF_KANI/SUMI
+#LMDC移行#  ls -d [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].tgz |
+#LMDC移行#  v_vertarray pk=END |
+#LMDC移行#  while read daytime ; do
+#LMDC移行#    if [ ${daytime:0:8} -lt $today ]; then
+#LMDC移行#      rm -rf $daytime
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#fi
+#LMDC移行#
+#LMDC移行## 機会ロスPDF(拡大版)
+#LMDC移行#if [ -d ${PROD_DIR}/KIKAILOSS/PDF_KAKU/SUMI ]; then
+#LMDC移行#  cd ${PROD_DIR}/KIKAILOSS/PDF_KAKU/SUMI
+#LMDC移行#  ls -d [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].tgz |
+#LMDC移行#  v_vertarray pk=END |
+#LMDC移行#  while read daytime ; do
+#LMDC移行#    if [ ${daytime:0:8} -lt $today ]; then
+#LMDC移行#      rm -rf $daytime
+#LMDC移行#    fi
+#LMDC移行#  done
+#LMDC移行#fi
+#LMDC移行#
+#LMDC移行## 機会ロスPDF(履歴データ削除)
+#LMDC移行#if [ -d ${PROD_DIR}/KIKAILOSS/RIREKI ]; then
+#LMDC移行#  cd ${PROD_DIR}/KIKAILOSS/RIREKI
+#LMDC移行#  # 起動した日の週番号 weeknum から、10週前(weeknum-10) の週の、
+#LMDC移行#  # 火曜日の日付で保存されている履歴ファイルを削除する
+#LMDC移行#  weeknum=$(v_ldate $(v_ldate -w ${today})/-10)
+#LMDC移行#  rireki_del_day=$(v_ldate $weeknum | v_choosecol 2)
+#LMDC移行#  [ -z ${rireki_del_day} ] && rireki_del_day=99999999
+#LMDC移行#  find . -name "[a-z]*\.*${rireki_del_day}*" -type f -exec rm -f {} \;
+#LMDC移行#fi
+#LMDC移行#
+#LMDC移行### 2016/01/26 ADD（ED1606_01（過去作成ファイル削除対応）） START
+#LMDC移行## 機会ロスPDF(履歴（売り逃し）データ削除)
+#LMDC移行#if [ -d ${PROD_DIR}/KIKAILOSS/RIREKI2 ]; then
+#LMDC移行#  cd ${PROD_DIR}/KIKAILOSS/RIREKI2
+#LMDC移行#  # 起動した日の週番号 weeknum から、10週前(weeknum-10) の週の、
+#LMDC移行#  # 火曜日の日付で保存されている履歴ファイルを削除する
+#LMDC移行#  weeknum=$(v_ldate $(v_ldate -w ${today})/-10)
+#LMDC移行#  rireki2_del_day=$(v_ldate $weeknum | v_choosecol 2)
+#LMDC移行#  [ -z ${rireki2_del_day} ] && rireki2_del_day=99999999
+#LMDC移行#  find . -name "[a-z]*\.*${rireki2_del_day}*" -type f -exec rm -f {} \;
+#LMDC移行#fi
+#LMDC移行### 2016/01/26 ADD（ED1606_01（過去作成ファイル削除対応）） END
+#LMDC移行#
+#LMDC移行### 2016/07/08 MOD ED1607_03（機会ロスPDF中間データ送信処理の内部エラーに伴う削除対応）：SLIM_KIKAILOSS_SNDWKを削除
+#LMDC移行## 送信データ
+#LMDC移行#cat << FIN > $tmp-snd_dir
+#LMDC移行#EDB001P001 -1
+#LMDC移行#EDB001P002 -1
+#LMDC移行#EDB001P003 -1
+#LMDC移行#EDB001P004 -1
+#LMDC移行#EDB001P005 -1
+#LMDC移行#EDB001P006 -1
+#LMDC移行#EDB001P007 -1
+#LMDC移行#EDB001P008 -1
+#LMDC移行#EDB001P009 -1
+#LMDC移行#EDB001P010 -1
+#LMDC移行#EDB001P011 -1
+#LMDC移行#EDB001P012 -1
+#LMDC移行#EDB001P013 -1
+#LMDC移行#EDB001P014 -1
+#LMDC移行#EDB001P015 -1
+#LMDC移行#EDH001P001 -1
+#LMDC移行#EDB002P001 -1
+#LMDC移行#EDB002P002 -1
+#LMDC移行#EDB002P003 -1
+#LMDC移行#EDB002P004 -1
+#LMDC移行#EDB002P005 -1
+#LMDC移行#EDB002P006 -1
+#LMDC移行#EDB002P007 -1
+#LMDC移行#EDB002P008 -1
+#LMDC移行#EDB002P009 -1
+#LMDC移行#EDB002P010 -1
+#LMDC移行#EDB002P011 -1
+#LMDC移行#EDB002P012 -1
+#LMDC移行#EDB002P013 -1
+#LMDC移行#EDB002P014 -1
+#LMDC移行#EDB002P015 -1
+#LMDC移行#EDH002P001 -1
+#LMDC移行#EDB003P001 -1
+#LMDC移行#EDB003P002 -1
+#LMDC移行#EDB003P003 -1
+#LMDC移行#EDB003P004 -1
+#LMDC移行#EDB003P005 -1
+#LMDC移行#EDB003P006 -1
+#LMDC移行#EDB003P007 -1
+#LMDC移行#EDB003P008 -1
+#LMDC移行#EDB003P009 -1
+#LMDC移行#EDB003P010 -1
+#LMDC移行#EDB003P011 -1
+#LMDC移行#EDB003P012 -1
+#LMDC移行#EDB003P013 -1
+#LMDC移行#EDB003P014 -1
+#LMDC移行#EDB003P015 -1
+#LMDC移行#EDH004P001 -1
+#LMDC移行#EDB004P001 -1
+#LMDC移行#EDB004P002 -1
+#LMDC移行#EDB004P003 -1
+#LMDC移行#EDB004P004 -1
+#LMDC移行#EDB004P005 -1
+#LMDC移行#EDB004P006 -1
+#LMDC移行#EDB004P007 -1
+#LMDC移行#EDB004P008 -1
+#LMDC移行#EDB004P009 -1
+#LMDC移行#EDB004P010 -1
+#LMDC移行#EDB004P011 -1
+#LMDC移行#EDB004P012 -1
+#LMDC移行#EDB004P013 -1
+#LMDC移行#EDB004P014 -1
+#LMDC移行#EDB004P015 -1
+#LMDC移行#EDH004P001 -1
+#LMDC移行#EDB005P001 -1
+#LMDC移行#EDB005P002 -1
+#LMDC移行#EDB005P003 -1
+#LMDC移行#EDB005P004 -1
+#LMDC移行#EDB005P005 -1
+#LMDC移行#EDB005P006 -1
+#LMDC移行#EDB005P007 -1
+#LMDC移行#EDB005P008 -1
+#LMDC移行#EDB005P009 -1
+#LMDC移行#EDB005P010 -1
+#LMDC移行#EDB005P011 -1
+#LMDC移行#EDB005P012 -1
+#LMDC移行#EDB005P013 -1
+#LMDC移行#EDB005P014 -1
+#LMDC移行#EDB005P015 -1
+#LMDC移行#EDH005P001 -1
+#LMDC移行#SHSA1074 +5
+#LMDC移行#SHSA1075 +5
+#LMDC移行#SHSA1076 +5
+#LMDC移行#SHSD1063 +5
+#LMDC移行#SHSD1064 +5
+#LMDC移行#SHSD1065 +5
+#LMDC移行#SHSD1066 +5
+#LMDC移行#SHSD1067 +5
+#LMDC移行#SHSD1068 +5
+#LMDC移行#SHSD1069 +5
+#LMDC移行#SHSD1070 +5
+#LMDC移行#SHSD1071 +5
+#LMDC移行#SHSD1072 +5
+#LMDC移行#SHSD1073 +5
+#LMDC移行#SHSD1074 +5
+#LMDC移行#SHSD1075 +5
+#LMDC移行#SHSD1076 +5
+#LMDC移行#SHSE1063 +5
+#LMDC移行#SHSE1064 +5
+#LMDC移行#SHSE1065 +5
+#LMDC移行#SHSE1066 +5
+#LMDC移行#SHSE1067 +5
+#LMDC移行#SHSE1068 +5
+#LMDC移行#SHSE1069 +5
+#LMDC移行#SHSE1070 +5
+#LMDC移行#SHSE1071 +5
+#LMDC移行#SHSE1072 +5
+#LMDC移行#SHSE1073 +5
+#LMDC移行#SHSE1074 +5
+#LMDC移行#SHSE1075 +5
+#LMDC移行#SHSE1076 +5
+#LMDC移行#SHSI1063 +5
+#LMDC移行#SHSI1064 +5
+#LMDC移行#SHSI1065 +5
+#LMDC移行#SHSI1066 +5
+#LMDC移行#SHSI1067 +5
+#LMDC移行#SHSI1068 +5
+#LMDC移行#SHSI1069 +5
+#LMDC移行#SHSI1070 +5
+#LMDC移行#SHSI1071 +5
+#LMDC移行#SHSI1072 +5
+#LMDC移行#SHSI1073 +5
+#LMDC移行#SND_JOB_CTRL +5
+#LMDC移行#EDGF0001 -1
+#LMDC移行#EDGF0002 -1
+#LMDC移行#EDGF0003 -1
+#LMDC移行#EDGF0004 -1
+#LMDC移行#EDGF0005 -1
+#LMDC移行#EDGF0006 -1
+#LMDC移行#EDGF0007 -1
+#LMDC移行#EDGF0008 -1
+#LMDC移行#EDGF0009 -1
+#LMDC移行#EDGF0010 -1
+#LMDC移行#EDGF0011 -1
+#LMDC移行#EDGF0012 -1
+#LMDC移行#EDGF0013 -1
+#LMDC移行#EDGF0014 -1
+#LMDC移行#EDG100P001 +5
+#LMDC移行#EDG100P002 +5
+#LMDC移行#EDG100P003 +5
+#LMDC移行#EDG101P001 +5
+#LMDC移行#EDG101P002 +5
+#LMDC移行#EDG101P003 +5
+#LMDC移行#EDG101P004 +5
+#LMDC移行#EDG102P001 +5
+#LMDC移行#EDG102P002 +5
+#LMDC移行#EDG102P003 +5
+#LMDC移行#EDG102P004 +5
+#LMDC移行#EDG103P001 +5
+#LMDC移行#EDG103P002 +5
+#LMDC移行#EDG103P003 +5
+#LMDC移行#EDG103P004 +5
+#LMDC移行#EDG104P001 +5
+#LMDC移行#EDG104P002 +5
+#LMDC移行#EDG104P003 +5
+#LMDC移行#EDG104P004 +5
+#LMDC移行#EDG105P001 +5
+#LMDC移行#EDG105P002 +5
+#LMDC移行#EDG105P003 +5
+#LMDC移行#EDG105P004 +5
+#LMDC移行#EDG106P001 +5
+#LMDC移行#EDG106P002 +5
+#LMDC移行#EDG106P003 +5
+#LMDC移行#EDG106P004 +5
+#LMDC移行#EDG107P001 +5
+#LMDC移行#EDG107P002 +5
+#LMDC移行#EDG107P003 +5
+#LMDC移行#EDG107P004 +5
+#LMDC移行#SBA195P111 +6
+#LMDC移行#FIN
+#LMDC移行#
+#LMDC移行#cat $tmp-snd_dir |
+#LMDC移行#while read dir kikan ;do
+#LMDC移行#  [ ! -d ${PROD_DIR}/SND/$dir ] && continue;
+#LMDC移行#  cd ${PROD_DIR}/SND/$dir
+#LMDC移行#  #find . -mtime +$kikan -type f -exec rm -f {} \;
+#LMDC移行#  find . -mtime $kikan -type f -exec rm -f {} \;
+#LMDC移行#done
+#LMDC移行## JP1対応　不要処理コメントアウト END
+
+## 2015/07/27追加 START
+## 返品削減データ
+## 35日以上経過したファイルを削除
+# 受信(取得)データ
+cat << FIN > $tmp-data_hpsg
+DT.KINKYUCUT              35
+HNT_KEIKAKUSYURYO_DAY     35
+HNT_KOSINTUTI             35
+HNT_ONLINE_ATESAKI_VENDOR 35
+HNW_ATESAKI               35
+HNW_ONLINE_ATESAKI_PARAM  35
+SCM                       35
+ZAIKOSOKUHO_12JISIME      35
+HNT_KEIKAKUSYURYO_SYANAI 35
+FIN
+
+cat $tmp-data_hpsg |
+while read dir kikan ;do
+  [ ! -d ${PROD_DIR}/DATA_HPSG/$dir ] && continue
+  cd ${PROD_DIR}/DATA_HPSG/$dir
+  find . -mtime +$kikan -type f -exec rm -f {} \;
+done
+
+# 送信データ
+cat << FIN > $tmp-hpsg
+EXCEL   35
+SENDLOG 35
+FIN
+
+cat $tmp-hpsg |
+while read dir kikan ;do
+  [ ! -d ${PROD_DIR}/HPSG/$dir ] && continue
+  cd ${PROD_DIR}/HPSG/$dir
+  find . -mtime +$kikan -type f -exec rm -f {} \;
+done
+## 2015/07/27追加 END
+
+#LMDC移行## JP1対応　不要処理コメントアウト START
+#LMDC移行#####################################
+#LMDC移行## 横断集計 IFPログのクリア
+#LMDC移行#####################################
+#LMDC移行#cd $IFP_HOME/log
+#LMDC移行#cat ifp_client_app.log >> ifp_client_app.log.$today
+#LMDC移行#cat ifp_client_sys.log >> ifp_client_sys.log.$today
+#LMDC移行#cat ifp_server_app.log >> ifp_server_app.log.$today
+#LMDC移行#cat ifp_server_sys.log >> ifp_server_sys.log.$today
+#LMDC移行#:> ifp_client_app.log
+#LMDC移行#:> ifp_client_sys.log
+#LMDC移行#:> ifp_server_app.log
+#LMDC移行#:> ifp_server_sys.log
+#LMDC移行#chmod -f 666 ./*
+#LMDC移行#
+#LMDC移行## 過去6日分を残し削除
+#LMDC移行## 6月21日だったら、6月15～20日送信分を残し削除
+#LMDC移行#find . -mtime +6 -type f -exec rm -f {} \;
+#LMDC移行#
+#LMDC移行#
+#LMDC移行## 2012/05/08追加 start
+#LMDC移行###################################################
+#LMDC移行## 横断集計 機会ロスPDFエラーファイルのクリア
+#LMDC移行###################################################
+#LMDC移行## 7日以上前のものは消去する。
+#LMDC移行#cd ${PROD_DIR}/work/ERROR_PDF
+#LMDC移行#find . -mtime +6 -type f -exec rm -f {} \;
+#LMDC移行## 2012/05/08追加 end
+#LMDC移行## JP1対応　不要処理コメントアウト END
+
+
+# 終了
+rm -f $tmp-*
+exit 0

@@ -1,0 +1,203 @@
+#!/bin/bash -xv
+source `dirname $0`/../.bashrc >& /dev/null
+#
+# MDWEEK.MAINTENANCE
+# 横断集計用カレンダーを実行日の2年後の週まで追記する。
+#
+#
+# CREATED BY : LAWSON 2016/04/13
+# UPDATED BY : LAWSON 2017/02/14 ED1701_03（MDWEEK.MAINTENANCEエラーハンドリング改修） 
+#                         MDWEEK_FILE（本体ファイル）に直接上書きせずに、MDWEEK_NEWとして保存する
+# MODIFIED BY : vinx 2025/11/28 LMDC移行 JP1対応
+
+
+
+########################
+# 開始処理
+########################
+##
+##
+#LMDC移行## 開始処理変更 START
+#LMDC移行## ログの記録
+#LMDC移行#echo "${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$"
+#LMDC移行#exec 2> ${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$
+exec 2> /dev/null
+source ${PROD_DIR}/SHELL/OUTLOG.INI
+exec 2> ${LOG_FILE}
+
+#LMDC移行## 開始ジョブＣＴＲＬの記録
+#LMDC移行#touch ${PROD_DIR}/JOB_CTRL/$(basename $0).$HOSTNAME.START.$(date +%Y%m%d)
+
+# 起動時刻の記録
+#LMDC移行#echo "$HOSTNAME $(basename $0) $$ START $(date +%Y%m%d%H%M%S)" >> ${PROD_DIR}/LOG/UPCNT
+echo "${LOG_BASE} : start time = `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#LMDC移行## 開始処理変更 END
+
+
+########################
+# 変数の定義
+########################
+tmp=${PROD_DIR}/tmp/$$
+tbld=${PROD_DIR}/PRM
+
+########################
+# エラー処理
+########################
+# JP1対応　ログ出力、リターンコード変更 START
+
+# 2017/02/14 LAWSON MOD ED1701_03 CALENDARMAKE_ERRORにする START
+#ERROR_EXIT(){
+#  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+CALMAKEERROR_EXIT(){
+#LMDC移行#  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) CALENDARMAKE_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:M]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+# 2017/02/14 LAWSON MOD ED1701_03 CALENDARMAKE_ERRORにする END
+  rm -f $tmp-*
+#LMDC移行#  touch ${PROD_DIR}/JOB_CTRL/$(basename $0).$HOSTNAME.ERROR.$(date +%Y%m%d)
+#LMDC移行#  echo "$HOSTNAME $(basename $0) ERROR $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+  echo "${LOG_BASE} : ERROR end : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#  exit 1
+  exit 51
+}
+# JP1対応 END
+
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する START
+########################
+# 現在のカレンダーファイルを更新ファイルのベースとしてコピー
+########################
+cp -p $tbld/MDWEEK_FILE $tbld/MDWEEK_NEW
+[ $? -ne 0 ] && CALMAKEERROR_EXIT
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する END
+
+########################
+# 日付更新
+########################
+#i=更新された最後の週番号
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する START
+#i=$(cat $tbld/MDWEEK_FILE | tail -n1 | awk '{print $1}')
+i=$(cat $tbld/MDWEEK_NEW | tail -n1 | awk '{print $1}')
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する END
+#manday0=更新された最後の月曜日付
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する START
+#manday0=$(cat $tbld/MDWEEK_FILE | tail -n1 | awk '{print $2}')
+manday0=$(cat $tbld/MDWEEK_NEW | tail -n1 | awk '{print $2}')
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する END
+#j=処理日の1年後の同日日付の週番号
+j=$(date -d '2 year' +%G%V)
+kako=0
+
+while [ $i -ne $j ]
+do
+  day_wk=`date -d "$manday0 7 day" "+%G%V"`
+  day_wk2=`date -d "$manday0 7 day" "+%V"`
+  day_wk3=`date -d "$manday0 7 day" "+%m%d"`
+  day_wk4=`date -d "$manday0 7 day" "+%Y"`
+  day0=`date -d "$manday0 7 day" "+%Y%m%d"`
+  day1=`date -d "$day0 1 day" "+%Y%m%d"`
+  day2=`date -d "$day0 2 day" "+%Y%m%d"`
+  day3=`date -d "$day0 3 day" "+%Y%m%d"`
+  day4=`date -d "$day0 4 day" "+%Y%m%d"`
+  day5=`date -d "$day0 5 day" "+%Y%m%d"`
+  day6=`date -d "$day0 6 day" "+%Y%m%d"`
+  #week_no_kako_wk=更新された最後の前年週番号
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する START
+  #week_no_kako_wk=$(cat $tbld/MDWEEK_FILE |\
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する END
+  week_no_kako_wk=$(cat $tbld/MDWEEK_NEW |\
+    tail -n1 |\
+    awk '{print $9}')
+
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する START
+  #kako=$(cat $tbld/MDWEEK_FILE |\
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する END
+  kako=$(cat $tbld/MDWEEK_NEW |\
+    v_choosecol 1 |\
+    sort -r -k1,1 |\
+    while read week_no_kako_list ; do
+    if [ "$week_no_kako_wk" = "$week_no_kako_list" ]; then
+    echo "$week_no_kako_wk2"
+    else
+      week_no_kako_wk2="$week_no_kako_list"
+    fi
+done
+)
+#前週の週番号を取得
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する START
+#zenshu_wk=$(cat $tbld/MDWEEK_FILE |\
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する END
+zenshu_wk=$(cat $tbld/MDWEEK_NEW |\
+         v_choosecol 2 1 |\
+         grep $manday0 | sort -k2,2 |\
+         tail -n1 |\
+         awk '{print $2}' |\
+         cut -c 5-) 
+#当週の週番号が[01]の場合
+ if [ "$day_wk2" = "01" ]; then
+      #かつ、当週の月日が[1229]の場合
+      if [ "$day_wk3" = "1229" ]; then
+        #かつ、前週の週番号が[51]の場合then当週の週番号[52]else[53]
+        if [ "$zenshu_wk" = "51" ]; then
+          day_wk="${day_wk4}52"
+        else
+          day_wk="${day_wk4}53"
+        fi
+        #かつ、当週の月日が[1230]の場合
+        else if [ "$day_wk3" = "1230" ]; then
+          #かつ、前週の週番号が[51]の場合then当週の週番号[52]else[53]
+          if [ "$zenshu_wk" = "51" ]; then
+            day_wk="${day_wk4}52"
+          else
+            day_wk="${day_wk4}53"
+          fi
+          else if [ "$day_wk3" = "1231" ]; then
+            if [ "$zenshu_wk" = "51" ]; then
+              day_wk="${day_wk4}52"
+            else
+              day_wk="${day_wk4}53"
+            fi
+          fi
+        fi
+      fi
+  else
+    res1=`expr $day_wk4  - 1`                   #前年を取得
+    res="${res1}1229\|${res1}1230\|${res1}1231" #前年+12(月)を設定
+    res2=`expr $day_wk2  - 1`                   #当週-1の今年週番号を取得
+    res3=`printf "%02d\n" ${res2}`              #当週-1の週番号下2桁を取得
+    #前年の最終の月曜の1229,1230,1231をチェック
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する START
+    #zennen=$(cat $tbld/MDWEEK_FILE |\
+# 2017/02/14 LAWSON MOD ED1701_03 MDWEEK_NEWに一旦格納する END
+    zennen=$(cat $tbld/MDWEEK_NEW |\
+             v_choosecol 2 1 |\
+             grep $res |\
+             awk '{print $1}' |\
+             cut -c 5-)
+       if [ "$zennen" = "1229" -o "$zennen" = "1230" -o "$zennen" = "1231" ]; then
+         day_wk="${day_wk4}${res3}"
+       fi 
+  fi
+  ########################
+  # 日付更新
+  ########################
+  next_year_week_add="$day_wk $day0 $day1 $day2 $day3 $day4 $day5 $day6 $kako"
+# 2017/02/14 LAWSON MOD ED1701_03 IFタイムリミット時間を変更 START
+  #echo $next_year_week_add >> $tbld/MDWEEK_FILE
+  #i=$(cat $tbld/MDWEEK_FILE | tail -n1 | awk '{print $1}')
+  #manday0=$(cat $tbld/MDWEEK_FILE | tail -n1 | awk '{print $2}')
+  echo $next_year_week_add >> $tbld/MDWEEK_NEW
+  i=$(cat $tbld/MDWEEK_NEW | tail -n1 | awk '{print $1}')
+  manday0=$(cat $tbld/MDWEEK_NEW | tail -n1 | awk '{print $2}')
+# 2017/02/14 LAWSON MOD ED1701_03 IFタイムリミット時間を変更 END
+done
+
+
+########################
+# 終了の処理
+########################
+rm -f $tmp-*
+# JP1対応　ログ出力変更 START
+#LMDC移行#touch ${PROD_DIR}/JOB_CTRL/$(basename $0).$HOSTNAME.END.$(date +%Y%m%d)
+#LMDC移行#echo "$HOSTNAME $(basename $0) $$ END $(date +%Y%m%d%H%M%S)" >> ${PROD_DIR}/LOG/UPCNT
+echo "${LOG_BASE} : end time : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+# JP1対応 END
+exit 0

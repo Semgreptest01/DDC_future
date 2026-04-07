@@ -1,0 +1,152 @@
+#!/bin/bash -xv
+source `dirname $0`/../.bashrc >& /dev/null
+#
+# TRANS.DAYOD.ZAIKOSOKUHO_12JISIME
+# 受発注から取得した「在庫切れ速報」データをSJISからUTF-8に
+# 変換し、フィールド区切りのデータにする。
+# 受信ファイルが複数ある場合は最新のものを使う
+#
+# Usage : TRANS.DAYOD.ZAIKOSOKUHO_12JISIME <yyyymmdd>
+# オプションで指定された日付ファイルを対象に処理を行う
+# 同一日付で複数ファイルがある場合は、最新のものを使う
+# （1日2回受信するなどイレギュラーな場合のみ発生）
+# オプション指定がない場合はエラーとする
+#
+# CREATED BY : vinx 2014/12/15
+# MODIFIED BY : vinx 2025/11/26 LMDC移行 JP1対応、受信ファイルの処理変更
+
+
+########################
+# 開始処理
+########################
+##
+##
+#LMDC移行## 開始処理変更 START
+#LMDC移行## ログの記録
+#LMDC移行#echo "${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$"
+#LMDC移行#exec 2> ${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$
+exec 2> /dev/null
+source ${PROD_DIR}/SHELL/OUTLOG.INI
+exec 2> ${LOG_FILE}
+
+#LMDC移行## 開始ジョブＣＴＲＬの記録
+#LMDC移行#touch ${PROD_DIR}/JOB_CTRL/$(basename $0).$HOSTNAME.START.$(date +%Y%m%d)
+
+# 起動時刻の記録
+#LMDC移行#echo "$HOSTNAME $(basename $0) $$ START $(date +%Y%m%d%H%M%S)" >> ${PROD_DIR}/LOG/UPCNT
+echo "${LOG_BASE} : start time = `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#LMDC移行## 開始処理変更 END
+
+
+########################
+# 変数の定義
+########################
+tmp=${PROD_DIR}/tmp/$$
+rcvd=${PROD_DIR}/RCV
+ddsd=${PROD_DIR}/PRM/COBDEF
+datad=${PROD_DIR}/DATA_HPSG
+
+
+########################
+# エラー処理
+########################
+# JP1対応　ログ出力、フラグ変更、リターンコード変更 START
+
+ERROR_EXIT(){
+#LMDC移行#  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / #msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:M]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+  rm -f $tmp-*
+#LMDC移行#  touch ${PROD_DIR}/JOB_CTRL/$(basename $0).$HOSTNAME.ERROR.$(date +%Y%m%d)
+#LMDC移行#  echo "$HOSTNAME $(basename $0) ERROR $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+  echo "${LOG_BASE} : ERROR end : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#  exit 1
+  exit 51
+}
+# JP1対応 END
+
+########################
+# 日付の定義
+########################
+day0=$1
+[ -z $day0 ] && ERROR_EXIT
+
+
+########################
+# 初期処理
+########################
+mkdir -p $datad/ZAIKOSOKUHO_12JISIME
+mkdir -p $rcvd/WJ/WJT081P1/SUMI
+
+
+########################
+# データ編集処理
+########################
+# 処理対象データが存在しない場合はエラー
+#LMDC移行## 受信ファイル処理変更 START
+#LMDC移行#rcvdata=$(ls $rcvd/WJ/WJT081P1/WJT081P1_${day0}????????? | v_vertarray pk=END | sort | tail -1)
+rcvdata=$(ls /prod/wk001/hnad/dat/hnt081p_001.dat | v_vertarray pk=END | sort | tail -1)
+#LMDC移行## 受信ファイル処理変更 END
+[ -z $rcvdata ] && ERROR_EXIT
+
+cat $rcvdata                            |\
+v_conv_fixrecv $ddsd/WJT081P1.cobdef  |\
+# 1:利用者コード                  2:在庫場所コード 3:配送ベンダコード(センターコード) 4:配送ベンダ名(センター名)        5:製造ベンダーコード(ベンダーコード)
+# 6:製造ベンダー名(ベンダー名)    7:商品コード     8:サイクルコード                   9:合計在庫引当数(当日引当発注数) 10:在庫数量(当日在庫数)
+# 11:在庫抽選期間開始年月日(計画終了有効開始日)   12:在庫抽選期間終了年月日((推奨)取消日－１日)                        13:在庫切速報配信年月日(処理日) 14:予備
+# 数量を変換（0001⇒1)
+awk '{$9=sprintf("%d",$9);\
+      $10=sprintf("%d",$10);print}'     |\
+# 列１４：予備を取り除く
+v_cutcol END                                 |\
+# 全角スペースを取り除く
+sed 's/　//g'                           |\
+sort -k1,2                              |\
+tee $tmp-check                          |\
+gzip -c                                 > $tmp-result_data.gz
+# 1:利用者コード                  2:在庫場所コード 3:配送ベンダコード(センターコード) 4:配送ベンダ名(センター名)        5:製造ベンダーコード(ベンダーコード)
+# 6:製造ベンダー名(ベンダー名)    7:商品コード     8:サイクルコード                   9:合計在庫引当数(当日引当発注数) 10:在庫数量(当日在庫数)
+# 11:在庫抽選期間開始年月日(計画終了有効開始日)   12:在庫抽選期間終了年月日((推奨)取消日－１日)                        13:在庫切速報配信年月日(処理日)
+[ $(STS_CHK ${PIPESTATUS[@]}) -eq 0 ] || ERROR_EXIT
+
+# ここをIFファイルに従って書き換える
+# 入力が正しいデータか確認
+v_colcnt $tmp-check > $tmp-retu
+[ $? -eq 0 ] || ERROR_EXIT
+
+if [ $(v_wc.pl $tmp-check) -ne 0 ] ; then
+  [ $(v_wc.pl $tmp-retu) -ne 1 ] && ERROR_EXIT
+  [ $(cat $tmp-retu) -ne 13 ] && ERROR_EXIT
+fi
+
+
+########################
+# 出力ディレクトリへ移動
+########################
+mv $tmp-result_data.gz $datad/ZAIKOSOKUHO_12JISIME/ZAIKOSOKUHO_12JISIME.$day0.gz
+[ $? -eq 0 ] || ERROR_EXIT
+
+
+########################
+# 後処理
+########################
+# 受信データを圧縮してTRANS済みディレクトリに移動
+#LMDC移行## 受信ファイル処理変更 START
+#LMDC移行#gzip -f $rcvdata
+gzip -fk $rcvdata
+[ $? -eq 0 ] || ERROR_EXIT
+#LMDC移行#mv -f $rcvdata.gz $rcvd/WJ/WJT081P1/SUMI
+mv -f $rcvdata.gz $rcvd/WJ/WJT081P1/SUMI/$(basename "$rcvdata")_$(date +%Y%m%d%H%M%S).gz
+#LMDC移行## 受信ファイル処理変更 END
+[ $? -eq 0 ] || ERROR_EXIT
+
+
+########################
+# 終了の処理
+########################
+rm -f $tmp-*
+# JP1対応　ログ出力変更 START
+#LMDC移行#touch ${PROD_DIR}/JOB_CTRL/$(basename $0).$HOSTNAME.END.$(date +%Y%m%d)
+#LMDC移行#echo "$HOSTNAME $(basename $0) $$ END $(date +%Y%m%d%H%M%S)" >> ${PROD_DIR}/LOG/UPCNT
+echo "${LOG_BASE} : end time : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+# JP1対応 END
+exit 0

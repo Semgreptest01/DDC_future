@@ -1,0 +1,118 @@
+#!/bin/bash -xv
+source `dirname $0`/../.bashrc >& /dev/null
+#
+# DATAMASTER.DAYHP.DT.KINKYUCUT : 『HNT_返品削減計画終了対象商品(日次)』をコピーして
+#                                 『DT.緊急カット』を作成する
+#
+# CREATED BY : vinx 2014/12/15
+# MODIFIED BY : LAWSON 2015/5/26 エラー時に終了ジョブCTRLは作成しない
+# MODIFIED BY : LAWSON 2017/3/3 ED1702_01（サーバ間コピー処理失敗時のエラーハンドリング見直し対応）
+#                                子シェル終了の結果判定を追加
+# MODIFIED BY : vinx 2025/11/17 LMDC移行 JP1対応
+
+#LMDC移行## ログ処理変更 START
+#LMDC移行## ログの記録
+#LMDC移行#echo "${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$"
+#LMDC移行#exec 2> ${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$
+exec 2> /dev/null
+source ${PROD_DIR}/SHELL/OUTLOG.INI
+exec 2> ${LOG_FILE}
+#LMDC移行## ログ処理変更 END
+
+# パス/LANGの設定(cronから起動)
+##
+
+# 共通変数の定義
+source ${PROD_DIR}/SHELL/ORCL.INI
+
+# 日付の定義
+today=$(date +%Y%m%d)
+
+#LMDC移行## JP1対応　不要処理コメントアウト START
+#LMDC移行## 開始ジョブＣＴＲＬ
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.START.${today}
+
+#LMDC移行## サブマシンでは処理しない
+#LMDC移行#if [ $(v_server_ctrl.pl -host ${HOSTNAME} -print msflg) == "S" ]; then
+#LMDC移行#  touch ${semd}/$(basename $0)_$1.${HOSTNAME}.END.${today}
+#LMDC移行#  exit 0
+#LMDC移行#fi
+#LMDC移行# JP1対応　コメントアウト END
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラー時の終了処理定義
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# JP1対応　ログ出力、フラグ変更、リターンコード変更 START
+
+ERROR_EXIT(){
+  # 監視エラー
+#LMDC移行#  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / #msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:M]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+  # エラー、終了ジョブＣＴＲＬ
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.ERROR.${today}
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+  # 終了時間の記録
+#LMDC移行#  echo "$HOSTNAME $(basename $0) ERROR $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+  echo "${LOG_BASE} : ERROR end : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#
+  rm -f $tmp-*
+#  exit 1
+  exit 51
+}
+# JP1対応 END
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理開始
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 起動時刻の記録
+# JP1対応　ログ出力変更 START
+#LMDC移行#echo "$HOSTNAME $(basename $0) START $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+echo "${LOG_BASE} : start time = `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+# JP1対応 END
+
+# JP1対応 ループ処理コメントアウト START
+#LMDC移行## 起動ジョブCTRLを待つ
+#LMDC移行#while true; do
+#LMDC移行#
+#LMDC移行#   # 最遅時刻になったらループ中断
+#LMDC移行#   if [ "$(date +%H%M)" -ge "1600" ] ; then
+#LMDC移行#     echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_DELAY [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+#LMDC移行#:
+#LMDC移行#     ERROR_EXIT
+#LMDC移行#     break
+#LMDC移行#   fi
+#LMDC移行#
+#LMDC移行#   # 更新通知がなければ 300秒 sleep してループにもどる
+#LMDC移行#   # [返品1] 01:計画終了対象商品 02:緊急カット入力対象商品 03:緊急カット商品
+#LMDC移行#   # [返品2] 04:計画終了対象商品(日次） 05:計画終了対象商品（週次） 06:在庫切れ速報（22時締め） 07:在庫切れ速報（12時締め）
+#LMDC移行#   if [ "$(zcat ${orad}/HNT_KOSINTUTI/HNT_KOSINTUTI.${today}.gz | awk '$1=="04" && $2=="'"${today}"'"' | v_wc.pl)" != "1" ] ; then
+#LMDC移行#     sleep 300 && continue   
+#LMDC移行#   fi
+#LMDC移行#
+   # データ作成
+   $sysd/GETDATA.DAYHP.DT.KINKYUCUT ${today}
+# 2017/03/03 LAWSON ADD ED1702_01 エラー判定追加 START
+   [ $? -eq 0 ] || ERROR_EXIT
+#LMDC移行# 2017/03/03 LAWSON ADD ED1702_01 エラー判定追加 END
+
+#LMDC移行#   # ループを抜ける
+#LMDC移行#   break
+#LMDC移行#
+#LMDC移行#done
+#LMDC移行# JP1対応 ループ処理コメントアウト END
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理終了
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 終了時刻の記録
+# JP1対応　ログ出力変更 START
+#LMDC移行#echo "$HOSTNAME $(basename $0) END $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+echo "${LOG_BASE} : end time : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+# JP1対応 END
+
+# 終了
+rm -f $tmp-*
+exit 0

@@ -1,0 +1,101 @@
+#!/bin/bash -xv
+source `dirname $0`/../.bashrc >& /dev/null
+#
+# MDWEEK.MAINTENANCE.CHECK
+# 作成された新しい横断集計用カレンダーの整合性をチェックする
+#
+#
+# CREATED BY : LAWSON 2017/02/14 ED1701_03（MDWEEK.MAINTENANCEエラーハンドリング改修）
+# MODIFIED BY : vinx 2025/11/28 LMDC移行 JP1対応
+
+
+########################
+# 開始処理
+########################
+##
+##
+#LMDC移行## 開始処理変更 START
+#LMDC移行## ログの記録
+#LMDC移行#echo "${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$"
+#LMDC移行#exec 2> ${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$
+exec 2> /dev/null
+source ${PROD_DIR}/SHELL/OUTLOG.INI
+exec 2> ${LOG_FILE}
+
+#LMDC移行## 開始ジョブＣＴＲＬの記録
+#LMDC移行#touch ${PROD_DIR}/JOB_CTRL/$(basename $0).$HOSTNAME.START.$(date +%Y%m%d)
+
+# 起動時刻の記録
+#LMDC移行#echo "$HOSTNAME $(basename $0) $$ START $(date +%Y%m%d%H%M%S)" >> ${PROD_DIR}/LOG/UPCNT
+echo "${LOG_BASE} : start time = `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#LMDC移行## 開始処理変更 END
+
+
+########################
+# 変数の定義
+########################
+tmp=${PROD_DIR}/tmp/$$
+tbld=${PROD_DIR}/PRM
+
+########################
+# エラー処理
+########################
+# JP1対応　ログ出力、リターンコード変更 START
+CALENDARMAKE_EXIT(){
+#  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) CALENDARMAKE_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+  rm -f $tmp-*
+#LMDC移行#  touch ${PROD_DIR}/JOB_CTRL/$(basename $0).$HOSTNAME.ERROR.$(date +%Y%m%d)
+#LMDC移行#  echo "$HOSTNAME $(basename $0) ERROR $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+  echo "${LOG_BASE} : ERROR end : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#  exit 1
+  exit 51
+}
+# JP1対応 END
+
+########################
+# 日付の定義
+########################
+# 処理日の日付を取得
+today=$(v_ldate today | v_choosecol 1)
+
+########################
+# カレンダーファイル存在チェック
+########################
+[ ! -e $tbld/MDWEEK_NEW ] && CALENDARMAKE_EXIT
+CAL_FILE="$tbld/MDWEEK_NEW"
+[ $(ls -l $CAL_FILE | v_choosecol 5) -eq 0 ] && CALENDARMAKE_EXIT
+
+########################
+# 翌日日付・週番号取得チェック
+########################
+tomorrow=$(v_ldate today/+1)
+[ -z "${tomorrow}" ] && CALENDARMAKE_EXIT
+[ -z "$(grep $tomorrow ${tbld}/MDWEEK_NEW)" ] && CALENDARMAKE_EXIT
+weeknum=$(v_ldate -w ${tomorrow})
+[ -z "${weeknum}" ] && CALENDARMAKE_EXIT
+[ -z "$(grep $weeknum ${tbld}/MDWEEK_NEW)" ] && CALENDARMAKE_EXIT
+
+########################
+# 10週間後週番号
+########################
+week10num=$(v_ldate $(v_ldate ${today} | v_choosecol 3)/+10)
+[ -z "${week10num}" ] && CALENDARMAKE_EXIT
+[ -z "$(grep $week10num ${tbld}/MDWEEK_NEW)" ] && CALENDARMAKE_EXIT
+
+########################
+# カレンダーマスタの最終日付チェック
+########################
+calenddate=$(expr $(echo ${today} | cut -c1-4) + 2)$(echo ${today} | cut -c5-8)
+# 作成ロジックの関係上、1週多く作成してしまうケースがあるため、2週分を見て判定する
+[ -z "$(tail -2 ${tbld}/MDWEEK_NEW | grep $calenddate)" ] && CALENDARMAKE_EXIT
+
+########################
+# 終了の処理
+########################
+rm -f $tmp-*
+# JP1対応　ログ出力変更 START
+#LMDC移行#touch ${PROD_DIR}/JOB_CTRL/$(basename $0).$HOSTNAME.END.$(date +%Y%m%d)
+#LMDC移行#echo "$HOSTNAME $(basename $0) $$ END $(date +%Y%m%d%H%M%S)" >> ${PROD_DIR}/LOG/UPCNT
+echo "${LOG_BASE} : end time : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+# JP1対応 END
+exit 0

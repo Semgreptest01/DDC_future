@@ -1,0 +1,331 @@
+#!/bin/bash -xv
+source `dirname $0`/../.bashrc >& /dev/null
+#
+# MAILSEND.DAYHP.ZAIKOSOKUHO_SYANAI : 在庫切れ速報メール
+#                                   （社内向け）
+#
+# CREATED BY : vinx 2014/12/15
+
+
+# ログの記録
+#LMDC移行# Start
+#LMDC移行#echo "${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$"
+#LMDC移行#exec 2> ${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$
+exec 2> /dev/null
+source ${PROD_DIR}/SHELL/OUTLOG.INI
+exec 2> ${LOG_FILE}
+#LMDC移行# End
+
+# パス/LANGの設定(cronから起動)
+##
+
+# 共通変数の定義
+source ${PROD_DIR}/SHELL/HPSG.INI
+
+# 日付の定義など
+today=$(v_ldate today | v_choosecol 1)
+current_time=$(date +%Y%m%d%H%M%S)
+
+#LMDC移行# Start
+#LMDC移行## 開始ジョブＣＴＲＬ
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.START.${today}
+#LMDC移行#
+#LMDC移行## サブマシンでは処理しない
+#LMDC移行#if [ $(v_server_ctrl.pl -host ${HOSTNAME} -print msflg) == "S" ]; then
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+#LMDC移行#  exit 0
+#LMDC移行#fi
+#LMDC移行# End
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラー時の終了処理定義
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+ERROR_EXIT(){
+#LMDC移行# Start
+#LMDC移行#  # 監視エラー
+#LMDC移行#  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+#LMDC移行#  # エラー、終了ジョブＣＴＲＬ
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.ERROR.${today}
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+#LMDC移行#  # 終了時間の記録
+#LMDC移行#  echo "$HOSTNAME $(basename $0) ERROR $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+#LMDC移行#
+#LMDC移行#  #rm -f $tmp-*
+#LMDC移行#  exit 1
+  # 監視エラー
+  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:M]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+
+  # 終了時間の記録
+  echo "${LOG_BASE} : ABEND end : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+
+  #rm -f $tmp-*
+  exit 51
+#LMDC移行# End
+}
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理開始
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 起動時刻の記録
+#LMDC移行# Start
+#LMDC移行#echo "$HOSTNAME $(basename $0) START $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+
+echo "${LOG_BASE} : start time = `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#LMDC移行# End
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラーチェック
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# オプション解析
+day0=$1
+[ -z $day0 ] && ERROR_EXIT
+
+sime=$2
+[ -z $sime ] && ERROR_EXIT
+
+# 存在チェック
+table=ZAIKOSOKUHO_${sime}JISIME
+[ ! -e $orad/${table}/${table}.$day0.gz ] && ERROR_EXIT
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# メール送信前準備
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+
+# 社別商品
+[ ! -e $datad/MASTER/SYABETU_SYOHIN.gz ] && ERROR_EXIT
+
+gzip -cd $datad/MASTER/SYABETU_SYOHIN.gz |\
+awk '$3>="'$day0'"&&$4<="'$day0'"'       |\
+v_uniqbybot 1 2                              |\
+awk '{print $1,$6,$13,$14}'              |\
+sort -u                                  > $tmp-syohin
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+# 1:商品コード 2:商品名 3:ＤＥＰＴコード 4:ＣＬＡＳＳコード
+
+# ＤＥＰＴ
+[ ! -e $datad/MASTER/DEPT.gz ] && ERROR_EXIT
+
+gzip -cd $datad/MASTER/DEPT.gz     |\
+awk '$3>="'$day0'"&&$4<="'$day0'"' |\
+v_uniqbybot 1 2                        |\
+awk '{print $2,$5}'                |\
+sort                                > $tmp-dept
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+# 1:ＤＥＰＴコード 2:ＤＥＰＴ名
+
+# ＣＬＡＳＳ
+[ ! -e $datad/MASTER/CLASS.gz ] && ERROR_EXIT
+
+gzip -cd $datad/MASTER/CLASS.gz    |\
+awk '$4>="'$day0'"&&$5<="'$day0'"' |\
+v_uniqbybot 1 3                        |\
+awk '{print $2,$3,$6}'             |\
+sort -u                             > $tmp-class
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+# 1:ＤＥＰＴコード 2:ＣＬＡＳＳコード 3:ＣＬＡＳＳ名
+
+LANG=C sort -k3,4 $tmp-syohin                |\
+v_s3match +_ pk=3-4 $tmp-class              |\
+# 1:商品コード 2:商品名 3:ＤＥＰＴコード 4:ＣＬＡＳＳコード 5:ＣＬＡＳＳ名
+LANG=C sort -k3,3                              |\
+v_s3match +_ pk=3 $tmp-dept                 |\
+sort                                     > $tmp-syohin-dept-class
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+# 1:商品コード 2:商品名 3:ＤＥＰＴコード 4:ＤＥＰＴ名 5:ＣＬＡＳＳコード 6:ＣＬＡＳＳ名
+
+
+###############################
+## 添付ファイル作成
+###############################
+
+gzip -cd $orad/${table}/${table}.$day0.gz  |\
+# 1:利用者コード                  2:在庫場所コード 3:配送ベンダコード(センターコード) 4:配送ベンダ名(センター名)        5:製造ベンダーコード(ベンダーコード)
+# 6:製造ベンダー名(ベンダー名)    7:商品コード     8:サイクルコード                   9:合計在庫引当数(当日引当発注数) 10:在庫数量(当日在庫数)
+# 11:在庫抽選期間開始年月日(計画終了有効開始日)   12:在庫抽選期間終了年月日((推奨)取消日－１日)                        13:在庫切速報配信年月日(処理日)
+sort -k7,7                                 |\
+v_s3match +_ pk=7 $tmp-syohin-dept-class      |\
+# 1:商品コード 2:商品名 3:ＤＥＰＴコード 4:ＤＥＰＴ名 5:ＣＬＡＳＳコード 6:ＣＬＡＳＳ名
+# この時点
+# 1:利用者コード                  2:在庫場所コード 3:配送ベンダコード(センターコード) 4:配送ベンダ名(センター名)        5:製造ベンダーコード(ベンダーコード)
+# 6:製造ベンダー名(ベンダー名)    7:商品コード     8:商品名                           9:ＤＥＰＴコード                 10:ＤＥＰＴ名
+# 11:ＣＬＡＳＳコード            12:ＣＬＡＳＳ名  13:サイクルコード                  14:合計在庫引当数(当日引当発注数) 15:在庫数量(当日在庫数)
+# 16:在庫抽選期間開始年月日(計画終了有効開始日) 17:在庫抽選期間終了年月日((推奨)取消日－１日) 18:在庫切速報配信年月日(処理日)
+
+# 在庫抽選期間終了年月日((推奨)取消日－１日)を(推奨)取消日にする
+v_ldate 17/+1 -f |\
+v_cutcol 17 19 20      |\
+
+awk '$18=="'$day0'"{print substr($18,0,4)"/"substr($18,5,2)"/"substr($18,7,2),$3,$4,$5,$6,\
+                          $10,$12,$7,$8,substr($16,0,4)"/"substr($16,5,2)"/"substr($16,7,2),\
+                          $15,$14,substr($17,0,4)"/"substr($17,5,2)"/"substr($17,7,2),$1}' |\
+# 1:処理日       2:センターコード 3:センター名 4:ベンダーコード 5:ベンダー名
+# 6:Dept名       7:Class名        8:商品コード 9:商品名        10:計画終了有効開始日
+# 11:当日在庫数 12:当日引当発注数 13:取消日 14:利用者コード
+sort                                       > $tmp-jisseki-data
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+
+
+# エクセル作成
+EXCEL_FILE="$xlsd/$table.$current_time.xls"
+sort -k1,8 $tmp-jisseki-data                  |\
+# 1:処理日       2:センターコード 3:センター名 4:ベンダーコード 5:ベンダー名
+# 6:Dept名       7:Class名        8:商品コード 9:商品名        10:計画終了有効開始日
+# 11:当日在庫数 12:当日引当発注数 13:取消日 14:利用者コード
+# 重複レコードの除外	
+v_uniqbytop 1 8                                  |\
+# エクセルに表示する項目に絞る＆並べる
+v_cutcol 14                                       > $tmp-excel-data
+# 1:処理日       2:センターコード 3:センター名 4:ベンダーコード 5:ベンダー名
+# 6:Dept名       7:Class名        8:商品コード 9:商品名        10:計画終了有効開始日
+# 11:当日在庫数 12:当日引当発注数 13:取消日
+
+v_embed_in_xls.sh < $tpld/EXCEL/TEMPLATE_${table}_SYANAI.xls  \
+1 a4 $tmp-excel-data                                 > $EXCEL_FILE
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+
+
+###############################
+# 本日有効のアドレスマスタ
+###############################
+
+# 1:シーケンスNO 2:有効開始日 3:有効終了日 4:社員コード 5:氏名
+# 6:メールアドレス 7:緊急カット商品配信フラグ 8:在庫切れ速報(12時締め)配信フラグ 9:在庫切れ速報(22時締め)配信フラグ 10:宛先一覧配信フラグ
+# 11:配信フラグ予備 12:配信フラグ予備 13:配信フラグ予備 14:登録日 15:登録者 16:更新日 17:更新者
+awk '$2 <= "'$today'" && $3 >= "'$today'" && $8 == "1"{print $4,$5,$6}' $tbld/SYANAI_MASTER |\
+sort                                                                                        > $tmp-syanai-master
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# メール送信
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# メール送信ログの初期化
+: > ${sendlogd}/${current_time}_$(basename $0).OK
+: > ${sendlogd}/${current_time}_$(basename $0).NG
+
+cat $tmp-syanai-master |\
+# 1:氏名コード 2:氏名 3:メールアドレス
+while read code name address ; do
+
+
+  #_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+  # 通常メール
+  #_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+  if [ $(v_wc.pl $tmp-excel-data) -ne 0 ] ; then
+
+    ###############################
+    # メール本文、件名
+    ###############################
+    subject="[Lawson-SCM]在庫切れ速報（${sime}時締め）${day0:0:4}年${day0:4:2}月${day0:6:2}日【商品統括部】"
+  
+    cat ${tpld}/HONBUN/ZAIKOSOKUHO_SYANAI.txt      > $tmp-honbun
+    cat ${tpld}/HONBUN/ZAIKOSOKUHO_SYANAI.5MB.txt  > $tmp-honbun.5mb
+  
+  
+    ###############################
+    # 添付ファイルサイズチェック(5MB)
+    ###############################
+    if [ $(ls -l $EXCEL_FILE | v_choosecol 5) -gt 5120000 ] ; then
+      v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${error_uketuke} --subject "▼要対応▼【添付ファイル5Mb超え】${subject}" $tmp-honbun.5mb
+      if [ $? -eq 0 ] ; then
+        echo ${code} ${name} ${address} "通常メール(5Mb超え)" $EXCEL_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+      else
+        v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${error_uketuke} --subject "▼要対応▼【添付ファイル5Mb超え】${subject}" $tmp-honbun.5mb
+        if [ $? -eq 0 ] ; then
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "通常メール(5Mb超え)" $EXCEL_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+        else
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "通常メール(5Mb超え)" $EXCEL_FILE >> ${sendlogd}/${current_time}_$(basename $0).NG
+        fi
+      fi
+      # ループへもどる
+      continue
+    fi
+  
+    ###############################
+    # エクセル送信
+    ###############################
+    v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${address} --subject ${subject} --attach ${EXCEL_FILE} $tmp-honbun
+    if [ $? -eq 0 ] ; then
+      # 送信ログを記録
+      echo ${code} ${name} ${address} "通常メール" $EXCEL_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+    else
+      v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${address} --subject ${subject} --attach ${EXCEL_FILE} $tmp-honbun
+      if [ $? -eq 0 ] ; then
+        # 送信ログを記録
+        echo ${code} ${name} ${address} "通常メール" $EXCEL_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+      else
+        # 送信ログを記録
+        echo ${code} ${name} ${address} "通常メール" $EXCEL_FILE >> ${sendlogd}/${current_time}_$(basename $0).NG
+      fi
+    fi
+
+
+  #_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+  # 0件メール
+  #_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+  else
+
+    ###############################
+    # メール本文、件名
+    ###############################
+    subject="[Lawson-SCM]在庫切れ速報（${sime}時締め）${day0:0:4}年${day0:4:2}月${day0:6:2}日【商品統括部】"
+  
+    cat ${tpld}/HONBUN/ZAIKOSOKUHO_SYANAI_ZEROKEN.txt      > $tmp-honbun
+
+    ###############################
+    # メール送信
+    ###############################
+    v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${address} --subject ${subject} $tmp-honbun
+    if [ $? -eq 0 ] ; then
+      # 送信ログを記録
+      echo ${code} ${name} ${address} "0件メール" "添付なし" >> ${sendlogd}/${current_time}_$(basename $0).OK
+    else
+      v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${address} --subject ${subject} $tmp-honbun
+      if [ $? -eq 0 ] ; then
+        # 送信ログを記録
+        echo ${code} ${name} ${address} "0件メール" "添付なし" >> ${sendlogd}/${current_time}_$(basename $0).OK
+      else
+        # 送信ログを記録
+        echo ${code} ${name} ${address} "0件メール" "添付なし" >> ${sendlogd}/${current_time}_$(basename $0).NG
+      fi
+    fi
+
+  fi
+
+: ; done
+[ $? -ne 0 ] && ERROR_EXIT
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラーチェック
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 送信NGが0件でなければエラー（LMDC障害検知）
+[ $(v_wc.pl ${sendlogd}/${current_time}_$(basename $0).NG) -ne 0 ] && ERROR_EXIT
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理終了
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 終了時刻の記録
+#LMDC移行# Start
+#LMDC移行#echo "$HOSTNAME $(basename $0) END $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+
+echo "${LOG_BASE} : end time : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#LMDC移行# End
+
+# 終了の処理
+rm -f $tmp-*
+exit 0

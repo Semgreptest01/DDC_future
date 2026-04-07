@@ -1,0 +1,708 @@
+#!/bin/bash -xv
+source `dirname $0`/../.bashrc >& /dev/null
+#
+# MAILSEND.DAYHP.ZAIKOSOKUHO_RIYOSYA : 在庫切れ速報メール
+#                                   （センター、子ベンダー向け）
+#
+# CREATED BY : vinx 2014/12/15
+# UPDATED BY : vinx 2019/12/16 ED1912_35412（CH-2019-00578_STEP1_在庫切れ速報12時締めメール関連の改修）
+# MODIFIED BY : VINX 山本 2025/11/21  LMDC移行：横断集計メール移行対応
+
+
+# ログの記録
+#LMDC移行# Start
+#LMDC移行#echo "${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$"
+#LMDC移行#exec 2> ${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$
+exec 2> /dev/null
+source ${PROD_DIR}/SHELL/OUTLOG.INI
+exec 2> ${LOG_FILE}
+#LMDC移行# End
+
+# パス/LANGの設定(cronから起動)
+##
+
+# 共通変数の定義
+source ${PROD_DIR}/SHELL/HPSG.INI
+
+# 日付の定義など
+today=$(v_ldate today | v_choosecol 1)
+current_time=$(date +%Y%m%d%H%M%S)
+
+#LMDC移行# Start
+#LMDC移行## 開始ジョブＣＴＲＬ
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.START.${today}
+#LMDC移行#
+#LMDC移行## サブマシンでは処理しない
+#LMDC移行#if [ $(v_server_ctrl.pl -host ${HOSTNAME} -print msflg) == "S" ]; then
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+#LMDC移行#  exit 0
+#LMDC移行#fi
+#LMDC移行# End
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラー時の終了処理定義
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+ERROR_EXIT(){
+#LMDC移行# Start
+#LMDC移行#  # 監視エラー
+#LMDC移行#  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+#LMDC移行#  # エラー、終了ジョブＣＴＲＬ
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.ERROR.${today}
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+#LMDC移行#  # 終了時間の記録
+#LMDC移行#  echo "$HOSTNAME $(basename $0) ERROR $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+#LMDC移行#
+#LMDC移行#  rm -f $tmp-*
+#LMDC移行#  exit 1
+  # 監視エラー
+  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:M]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+
+  # 終了時間の記録
+  echo "${LOG_BASE} : ABEND end : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+
+  #rm -f $tmp-*
+  exit 51
+#LMDC移行# End
+}
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理開始
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 起動時刻の記録
+#LMDC移行# Start
+#LMDC移行#echo "$HOSTNAME $(basename $0) START $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+
+echo "${LOG_BASE} : start time = `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#LMDC移行# End
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラーチェック
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# オプション解析
+day0=$1
+[ -z $day0 ] && ERROR_EXIT
+
+sime=$2
+[ -z $sime ] && ERROR_EXIT
+
+# 存在チェック
+table=ZAIKOSOKUHO_${sime}JISIME
+[ ! -e $orad/${table}/${table}.$day0.gz ] && ERROR_EXIT
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# メール送信前準備
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+
+###############################
+## 今月のパスワード
+## (ZIP圧縮用)
+###############################
+
+# その月のパスワードを取得
+# 返品削減開始月（2009年7月）から何ヶ月目か？
+tsuki=$(v_ldate $(date +%Y%m)m 200906m)
+# パスワードファイルが何行か？
+gyosu=$(v_wc.pl $tbld/PASSWORD)
+
+if [ $gyosu -ge 1 ]; then
+
+  # 行数（$gyosu）が経過月数（$tsuki）より大きくなるまで
+  # パスワードファイルを増幅させる
+  cat $tbld/PASSWORD > $tmp-pass
+  while [ $tsuki -gt $gyosu ]; do
+    cat $tmp-pass $tmp-pass > $tmp-pass.new
+    mv $tmp-pass.new $tmp-pass
+    gyosu=$(v_wc.pl $tmp-pass)
+  : ; done
+  [ $? -ne 0 ] && ERROR_EXIT
+
+  # パスワードファイルの経過月数と同じ行番号がパスワード
+  password=$(awk 'NR=="'$tsuki'"' $tmp-pass | v_choosecol 1)
+fi
+
+# パスワードが取得できない場合
+[ -z $password ] && password=lawson
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# コピー宛先増幅用
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# HNW_宛先
+zcat $orad/HNW_ATESAKI/HNW_ATESAKI.${day0}.gz |\
+# 1:宛先コード 2:宛先名 3:ベンダーコード 4:ベンダー名
+v_choosecol 3 1 4                                    |\
+sort -u                                       |\
+tee $tmp-vendor-atesaki-name                  |\
+v_cutcol 3                                        > $tmp-vendor-atesaki
+# 1:ベンダーコード 2:宛先コード
+
+# HNT_オンライン宛先ベンダー
+zcat $orad/HNT_ONLINE_ATESAKI_VENDOR/HNT_ONLINE_ATESAKI_VENDOR.${day0}.gz |\
+# 1:チェーンストアコード       2:宛先コード                  3:ベンダーコード              4:ベンダー営業所コード          5:テストフラグ
+# 6:有効終了日                 7:有効開始日                  8:配信種別４０コピーフラグ    9:配信種別５０コピーフラグ     10:コピー１チェーンストアコード
+# 11:コピー１宛先コード       12:コピー１センターコード     13:配信種別４０コピー１フラグ 14:配信種別５０コピー１フラグ   15:コピー２チェーンストアコード
+# 16:コピー２宛先コード       17:コピー２センターコード     18:配信種別４０コピー２フラグ 19:配信種別５０コピー２フラグ   20:くくりＶＤＲコード
+# 21:ＤＤＣ宛先コード         22:ＤＤＣベンダーコード       23:実績配信有無フラグ         24:処理区分                     25:物理削除日
+# 26:コピー処理日             27:コピー処理状況区分         28:物理削除区分               29:作成者氏名コード             30:作成者氏名
+# 31:作成者部署コード         32:作成者部署名               33:作成プログラムＩＤ         34:作成日時                     35:オンライン更新者氏名コード
+# 36:オンライン更新者氏名     37:オンライン更新者部署コード 38:オンライン更新者部署名     39:オンライン更新プログラムＩＤ 40:オンライン更新日時
+# 41:バッチ更新プログラムＩＤ 42:バッチ更新日時             43:ロック連番                 44:削除区分                     45:更新端末ＩＤ
+
+# 処理日が有効開始日、有効終了日の範囲内
+awk '$6>="'$day0'"&&$7<="'$day0'"'       |\
+# vinx MOD 2019/12/16 ED1912_35412 START
+# 処理区分 < '07'
+#awk '"$24" < "07"'                       |\
+awk '$24 < "07"'                       |\
+# vinx MOD 2019/12/16 ED1912_35412 END
+# vinx MOD 2019/12/16 ED1912_35412 START
+# ベンダー営業所コード = '00'
+#awk '"$4" < "00"'                        |\
+# vinx MOD 2019/12/16 ED1912_35412 END
+v_choosecol 3 2 11                              |\
+sort -u                                  > $tmp-online-atesaki-vendor
+# 1:ベンダーコード 2:宛先コード 3:コピー1宛先コード
+
+# HNW_オンライン宛先パラメータ
+zcat $orad/HNW_ONLINE_ATESAKI_PARAM/HNW_ONLINE_ATESAKI_PARAM.${day0}.gz |\
+# 1:利用者コード 2:宛先コード 3:提供先区分 4:宛先抽出区分
+
+# vinx MOD 2019/12/16 ED1912_35412 START
+# 宛先抽出区分 = '2'
+#awk '"$4" < "2"'                                                         |\
+awk '$4 == "2"'                                                         |\
+# vinx MOD 2019/12/16 ED1912_35412 END
+v_choosecol 2 1                                                                 |\
+sort -u                                                                  > $tmp-online-atesaki-param
+# 1:宛先コード 2:利用者コード
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 商品名、ＤＥＰＴ名、ＣＬＡＳＳ名を取得
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 社別商品
+[ ! -e $datad/MASTER/SYABETU_SYOHIN.gz ] && ERROR_EXIT
+
+gzip -cd $datad/MASTER/SYABETU_SYOHIN.gz |\
+awk '$3>="'$day0'"&&$4<="'$day0'"'       |\
+v_uniqbybot 1 2                              |\
+awk '{print $1,$6,$13,$14}'              |\
+sort -u                                  > $tmp-syohin
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+# 1:商品コード 2:商品名 3:ＤＥＰＴコード 4:ＣＬＡＳＳコード
+
+# ＤＥＰＴ
+[ ! -e $datad/MASTER/DEPT.gz ] && ERROR_EXIT
+
+gzip -cd $datad/MASTER/DEPT.gz     |\
+awk '$3>="'$day0'"&&$4<="'$day0'"' |\
+v_uniqbybot 1 2                        |\
+awk '{print $2,$5}'                |\
+sort                                > $tmp-dept
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+# 1:ＤＥＰＴコード 2:ＤＥＰＴ名
+
+# ＣＬＡＳＳ
+[ ! -e $datad/MASTER/CLASS.gz ] && ERROR_EXIT
+
+gzip -cd $datad/MASTER/CLASS.gz    |\
+awk '$4>="'$day0'"&&$5<="'$day0'"' |\
+v_uniqbybot 1 3                        |\
+awk '{print $2,$3,$6}'             |\
+sort -u                             > $tmp-class
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+# 1:ＤＥＰＴコード 2:ＣＬＡＳＳコード 3:ＣＬＡＳＳ名
+
+LANG=C sort -k3,4 $tmp-syohin                |\
+v_s3match +_ pk=3-4 $tmp-class              |\
+# 1:商品コード 2:商品名 3:ＤＥＰＴコード 4:ＣＬＡＳＳコード 5:ＣＬＡＳＳ名
+LANG=C sort -k3,3                              |\
+v_s3match +_ pk=3 $tmp-dept                 |\
+sort                                     > $tmp-syohin-dept-class
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+# 1:商品コード 2:商品名 3:ＤＥＰＴコード 4:ＤＥＰＴ名 5:ＣＬＡＳＳコード 6:ＣＬＡＳＳ名
+
+
+###############################
+## 添付ファイル作成
+###############################
+
+# コピー宛先が存在する場合、
+# コピー宛先に紐付く利用者コードのレコードを増幅させる。
+# (利用者コード以外は元宛先と同じ）
+zcat $orad/${table}/${table}.$day0.gz    |\
+# 1:利用者コード                  2:在庫場所コード 3:配送ベンダコード(センターコード) 4:配送ベンダ名(センター名)        5:製造ベンダーコード(ベンダーコード)
+# 6:製造ベンダー名(ベンダー名)    7:商品コード     8:サイクルコード                   9:合計在庫引当数(当日引当発注数) 10:在庫数量(当日在庫数)
+# 11:在庫抽選期間開始年月日(計画終了有効開始日)   12:在庫抽選期間終了年月日((推奨)取消日－１日)                        13:在庫切速報配信年月日(処理日)
+sort -k5,5                               |\
+v_s2match pk=5 $tmp-vendor-atesaki          |\
+# MASTER:
+# 1:ベンダーコード 2:宛先コード
+# OUTPUT:
+# 1:利用者コード           2:在庫場所コード             3:配送ベンダコード(センターコード) 4:配送ベンダ名(センター名)  5:製造ベンダーコード(ベンダーコード)
+# 6:宛先コード             7:製造ベンダー名(ベンダー名) 8:商品コード                       9:サイクルコード           10:合計在庫引当数(当日引当発注数)
+# 11:在庫数量(当日在庫数) 12:在庫抽選期間開始年月日(計画終了有効開始日) 13:在庫抽選期間終了年月日((推奨)取消日－１日) 14:在庫切速報配信年月日(処理日)
+sort -k5,6                               |\
+v_s2match pk=5-6 $tmp-online-atesaki-vendor |\
+# MASTER:
+# 1:ベンダーコード 2:宛先コード 3:コピー1宛先コード
+# OUTPUT:
+# 1:利用者コード           2:在庫場所コード     3:配送ベンダコード(センターコード) 4:配送ベンダ名(センター名) 5:製造ベンダーコード(ベンダーコード)
+# 6:宛先コード             7:コピー１宛先コード 8:製造ベンダー名(ベンダー名)       9:商品コード              10:サイクルコード
+# 11:合計在庫引当数(当日引当発注数) 12:在庫数量(当日在庫数) 13:在庫抽選期間開始年月日(計画終了有効開始日) 14:在庫抽選期間終了年月日((推奨)取消日－１日) 15:在庫切速報配信年月日(処理日)
+sort -k7,7                               |\
+v_s2match pk=7 $tmp-online-atesaki-param    |\
+# MASTER:
+# 1:宛先コード 2:利用者コード
+# OUTPUT:
+# 1:利用者コード     2:在庫場所コード                  3:配送ベンダコード(センターコード) 4:配送ベンダ名(センター名)    5:製造ベンダーコード(ベンダーコード)
+# 6:宛先コード       7:コピー１宛先コード              8:利用者コード(コピー１宛先）      9:製造ベンダー名(ベンダー名) 10:商品コード
+# 11:サイクルコード 12:合計在庫引当数(当日引当発注数) 13:在庫数量(当日在庫数) 14:在庫抽選期間開始年月日(計画終了有効開始日) 15:在庫抽選期間終了年月日((推奨)取消日－１日)
+# 16:在庫切速報配信年月日(処理日)
+# vinx MOD 2019/12/16 ED1912_35412 START
+# コピー１宛先コードが入っていて、利用者コードが異なるものだけ取り出す
+#awk '$7!="" && $1!=$8'                   |\
+# 利用者コードが異なるものだけ取り出す
+awk '$1!=$8'                   |\
+# vinx MOD 2019/12/16 ED1912_35412 END
+# レイアウトを「在庫切れ速報」にそろえる
+v_choosecol 8 2-5 9-END                          |\
+gzip -c                                  > $tmp-zofuku
+# 1:利用者コード(コピー１宛先）   2:在庫場所コード 3:配送ベンダコード(センターコード) 4:配送ベンダ名(センター名)        5:製造ベンダーコード(ベンダーコード)
+# 6:製造ベンダー名(ベンダー名)    7:商品コード     8:サイクルコード                   9:合計在庫引当数(当日引当発注数) 10:在庫数量(当日在庫数)
+# 11:在庫抽選期間開始年月日(計画終了有効開始日)   12:在庫抽選期間終了年月日((推奨)取消日－１日)                        13:在庫切速報配信年月日(処理日)
+
+
+zcat $orad/${table}/${table}.$day0.gz $tmp-zofuku                                          |\
+# 1:利用者コード                  2:在庫場所コード 3:配送ベンダコード(センターコード) 4:配送ベンダ名(センター名)        5:製造ベンダーコード(ベンダーコード)
+# 6:製造ベンダー名(ベンダー名)    7:商品コード     8:サイクルコード                   9:合計在庫引当数(当日引当発注数) 10:在庫数量(当日在庫数)
+# 11:在庫抽選期間開始年月日(計画終了有効開始日)   12:在庫抽選期間終了年月日((推奨)取消日－１日)                        13:在庫切速報配信年月日(処理日)
+sort -k7,7                                                                                 |\
+v_s3match +_ pk=7 $tmp-syohin-dept-class                                                      |\
+# 1:商品コード 2:商品名 3:ＤＥＰＴコード 4:ＤＥＰＴ名 5:ＣＬＡＳＳコード 6:ＣＬＡＳＳ名
+# * この時点 *
+# 1:利用者コード                  2:在庫場所コード 3:配送ベンダコード(センターコード) 4:配送ベンダ名(センター名)        5:製造ベンダーコード(ベンダーコード)
+# 6:製造ベンダー名(ベンダー名)    7:商品コード     8:商品名                           9:ＤＥＰＴコード                 10:ＤＥＰＴ名
+# 11:ＣＬＡＳＳコード            12:ＣＬＡＳＳ名  13:サイクルコード                  14:合計在庫引当数(当日引当発注数) 15:在庫数量(当日在庫数)
+# 16:在庫抽選期間開始年月日(計画終了有効開始日) 17:在庫抽選期間終了年月日((推奨)取消日－１日) 18:在庫切速報配信年月日(処理日)
+
+# 在庫抽選期間終了年月日((推奨)取消日－１日)を(推奨)取消日にする
+v_ldate 17/+1 -f |\
+v_cutcol 17 19 20      |\
+
+awk '$18=="'$day0'"{print substr($18,0,4)"/"substr($18,5,2)"/"substr($18,7,2),$3,$4,$5,$6,\
+                          $10,$12,$7,$8,substr($16,0,4)"/"substr($16,5,2)"/"substr($16,7,2),\
+                          $15,$14,substr($17,0,4)"/"substr($17,5,2)"/"substr($17,7,2),$1}' |\
+# 1:処理日       2:センターコード  3:センター名  4:ベンダーコード   5:ベンダー名
+# 6:Dept名       7:Class名         8:商品コード  9:商品名          10:計画終了有効開始日
+# 11:当日在庫数 12:当日引当発注数 13:取消日     14:利用者コード
+sort                                                                                       |\
+tee $tmp-jisseki-data                                                                      |\
+# 利用者コードのリストを作る
+v_choosecol END                                                                                    |\
+sort -u                                                                                     > $tmp-jisseki-riyosya_code
+# 1:利用者コード
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+
+
+
+# エクセル作成
+for riyosya_code in $(cat $tmp-jisseki-riyosya_code) ; do
+
+  EXCEL_FILE="$xlsd/$table.$riyosya_code.$current_time.xls"
+  ZIP_FILE="$xlsd/$table.$riyosya_code.$current_time.zip"
+
+  # 利用者コードで絞る	
+  awk '$14=="'$riyosya_code'"' $tmp-jisseki-data     |\
+  # 1:処理日       2:センターコード 3:センター名 4:ベンダーコード 5:ベンダー名
+  # 6:Dept名       7:Class名        8:商品コード 9:商品名        10:計画終了有効開始日
+  # 11:当日在庫数 12:当日引当発注数 13:取消日 14:利用者コード
+  # 重複レコードの除外	
+  v_uniqbytop 1 8                                  |\
+  # エクセルに表示する項目に絞る＆並べる
+  v_cutcol 14                                       |\
+  tee $tmp-$riyosya_code-excel-data             > $tmp-excel-data
+  # 1:処理日       2:センターコード 3:センター名 4:ベンダーコード 5:ベンダー名
+  # 6:Dept名       7:Class名        8:商品コード 9:商品名        10:計画終了有効開始日
+  # 11:当日在庫数 12:当日引当発注数 13:取消日
+
+  v_embed_in_xls.sh < $tpld/EXCEL/TEMPLATE_${table}_RIYOSYA.xls  \
+  1 a4 $tmp-excel-data                                 > $EXCEL_FILE
+  [ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+
+  # 圧縮（パスワード付き)
+  zip -juq -P $password $ZIP_FILE $EXCEL_FILE 
+  [ $? -ne 0 ] && ERROR_EXIT
+
+  # テンポラリファイルの削除
+  rm $EXCEL_FILE
+  [ $? -ne 0 ] && ERROR_EXIT
+
+: ; done
+[ $? -ne 0 ] && ERROR_EXIT
+
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラーチェック
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 上限チェック
+# 利用者コードが400件を超えたらエラー
+# (アドレスマスタの登録上限値)
+if [ $(v_wc.pl $tmp-jisseki-riyosya_code) -gt 400 ] ; then
+  ERROR_EXIT
+fi
+
+###############################
+# 本日有効のアドレスマスタ
+###############################
+
+# 1:シーケンスNO 2:有効開始日 3:有効終了日 4:利用者コード 5:利用者名
+# 6:メールアドレス 7:緊急カット商品配信フラグ 8:在庫切れ速報(12時締め)配信フラグ 9:在庫切れ速報(22時締め)配信フラグ 10:計画終了対象商品（日次）
+# 11:配信フラグ予備 12:配信フラグ予備 13:配信フラグ予備 14:登録日 15:登録者 16:更新日 17:更新者
+if [ "${sime}" == "12" ] ; then
+  awk '$2 <= "'$today'" && $3 >= "'$today'" && $4 != "unknown"{print $4,$5,$6,$8}' $tbld/RIYOSYA_MASTER
+else
+  awk '$2 <= "'$today'" && $3 >= "'$today'" && $4 != "unknown"{print $4,$5,$6,$9}' $tbld/RIYOSYA_MASTER
+fi   |\
+sort  > $tmp-riyosya_master
+# 1:利用者コード 2:利用者名 3:メールアドレス 4:配信フラグ
+
+# 1:シーケンスNO 2:有効開始日 3:有効終了日 4:利用者コード 5:利用者名
+# 6:メールアドレス 7:緊急カット商品配信フラグ 8:在庫切れ速報(12時締め)配信フラグ 9:在庫切れ速報(22時締め)配信フラグ 10:計画終了対象商品（日次）
+# 11:配信フラグ予備 12:配信フラグ予備 13:配信フラグ予備 14:登録日 15:登録者 16:更新日 17:更新者
+if [ "${sime}" == "12" ] ; then
+  awk '$2 <= "'$today'" && $3 >= "'$today'" && $4 == "unknown" && $8 == "1"{print $4,$5,$6}' $tbld/RIYOSYA_MASTER
+else
+  awk '$2 <= "'$today'" && $3 >= "'$today'" && $4 == "unknown" && $9 == "1"{print $4,$5,$6}' $tbld/RIYOSYA_MASTER
+fi  |\
+sort > $tmp-riyosya_master-fumei
+# 1:利用者コード 2:利用者名 3:メールアドレス
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# メール送信
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+
+###############################
+# メール送信ログの初期化
+###############################
+: > ${sendlogd}/${current_time}_$(basename $0).OK
+: > ${sendlogd}/${current_time}_$(basename $0).NG
+
+###############################
+# 実績に存在する利用者コード
+###############################
+awk '{print $1,"1",$4}' $tmp-riyosya_master | sort -u > $tmp-riyosya_master.work
+# 1:利用者コード 2:アドレスマスタ有無 3:配信フラグ
+
+awk '{print $0,"1"}' $tmp-jisseki-riyosya_code     |\
+# 1:利用者コード 2:フラグ
+v_mjoin -d_ pk=1 $tmp-riyosya_master.work -         |\
+# 1:利用者コード 2:アドレスマスタ登録有無 3:配信フラグ 4:実績有無
+sort -u                                            |\
+while read riyosya_code flag1 flag2 flag3 ; do
+
+  # アドレスマスタ有無 配信フラグ有無 実績有無
+  # 1  通常メール
+  # 2  宛先不明メール
+  # 3  0件メール
+  # 4  メール配信しない
+
+  # 1 _ _ 配信しない
+  if [ "${flag1}" == "1" -a "${flag2}" == "_" -a "${flag3}" == "_" ] ; then
+    echo ${riyosya_code} 4
+
+  # 1 _ 1 配信しない
+  elif [ "${flag1}" == "1" -a "${flag2}" == "_" -a "${flag3}" == "1" ] ; then
+    echo ${riyosya_code} 4
+
+  # 1 1 _ ゼロ件メール
+  elif [ "${flag1}" == "1" -a "${flag2}" == "1" -a "${flag3}" == "_" ] ; then
+    echo ${riyosya_code} 3
+
+  # 1 1 1 通常メール
+  elif [ "${flag1}" == "1" -a "${flag2}" == "1" -a "${flag3}" == "1" ] ; then
+    echo ${riyosya_code} 1
+
+  # _ _ _ 存在しない
+  elif [ "${flag1}" == "_" -a "${flag2}" == "_" -a "${flag3}" == "_" ] ; then
+    :
+  # _ _ 1 宛先不明メール
+  elif [ "${flag1}" == "_" -a "${flag2}" == "_" -a "${flag3}" == "1" ] ; then
+    echo ${riyosya_code} 2
+
+  # _ 1 _ 存在しない
+  elif [ "${flag1}" == "_" -a "${flag2}" == "1" -a "${flag3}" == "_" ] ; then
+    :
+
+  # _ 1 1 存在しない
+  elif [ "${flag1}" == "_" -a "${flag2}" == "1" -a "${flag3}" == "1" ] ; then
+    :
+
+  fi
+
+done > $tmp-mail-syurui
+
+
+cat $tmp-mail-syurui |\
+# 1:利用者コード 2:配信メール種類
+while read riyosya_code mail_syurui ; do
+
+  # 通常メール
+  if [ "${mail_syurui}" == "1" ] ; then
+
+    awk '$1=="'"${riyosya_code}"'"' $tmp-riyosya_master |\
+    # 1:利用者コード 2:利用者名 3:メールアドレス
+    while read code name address misiyou ; do
+
+      ###############################
+      # メール本文、件名
+      ###############################
+      subject="[Lawson-SCM]在庫切れ速報（${sime}時締め）${day0:0:4}年${day0:4:2}月${day0:6:2}日【${code}：${name}】"
+      subject_password="[Lawson-SCM]在庫切れ速報（${sime}時締め）${day0:0:4}年${day0:4:2}月${day0:6:2}日パスワード"
+
+      cat ${tpld}/HONBUN/ZAIKOSOKUHO_RIYOSYA.txt          |\
+      sed 's/###riyo_id###/'${code}'/g'                   |\
+      sed 's/###riyo_name###/'${name}'/g'                  > $tmp-honbun
+
+      cat ${tpld}/HONBUN/ZAIKOSOKUHO_RIYOSYA.5MB.txt      |\
+      sed 's/###riyo_id###/'${code}'/g'                   |\
+      sed 's/###riyo_name###/'${name}'/g'                  > $tmp-honbun.5mb
+
+      cat ${tpld}/HONBUN/ZAIKOSOKUHO_RIYOSYA_PASSWORD.txt |\
+      sed 's/###password###/'${password}'/g'               > $tmp-honbun_pass
+
+      ###############################
+      # 添付ファイルサイズチェック(5MB)
+      ###############################
+      ZIP_FILE="$xlsd/$table.$code.$current_time.zip"
+      if [ $(ls -l $ZIP_FILE | v_choosecol 5) -gt 5120000 ] ; then
+        v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${error_uketuke} --subject "▼要対応▼【添付ファイル5Mb超え】${subject}" $tmp-honbun.5mb
+        if [ $? -eq 0 ] ; then
+          echo ${code} ${name} ${address} "通常メール(5Mb超え)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+        else
+          v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${error_uketuke} --subject "▼要対応▼【添付ファイル5Mb超え】${subject}" $tmp-honbun.5mb
+          if [ $? -eq 0 ] ; then
+            # 送信ログを記録
+            echo ${code} ${name} ${address} "通常メール(5Mb超え)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+          else
+            # 送信ログを記録
+            echo ${code} ${name} ${address} "通常メール(5Mb超え)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).NG
+          fi
+        fi
+        # ループへもどる
+        continue
+      fi
+
+      ###############################
+      # エクセル送信
+      ###############################
+      v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${address} --subject ${subject} --attach ${ZIP_FILE} $tmp-honbun
+      if [ $? -eq 0 ] ; then
+        # 送信ログを記録
+        echo ${code} ${name} ${address} "通常メール" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+      else
+        v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${address} --subject ${subject} --attach ${ZIP_FILE} $tmp-honbun
+        if [ $? -eq 0 ] ; then
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "通常メール" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+        else
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "通常メール" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).NG
+        fi
+      fi
+
+      ###############################
+      # パスワード送信
+      ###############################
+      v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${address} --subject ${subject_password} $tmp-honbun_pass
+      if [ $? -eq 0 ] ; then
+        # 送信ログを記録
+        echo ${code} ${name} ${address} "通常メール(パスワード)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+      else
+        v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${address} --subject ${subject_password} $tmp-honbun_pass
+        if [ $? -eq 0 ] ; then
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "通常メール(パスワード)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+        else
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "通常メール(パスワード)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).NG
+        fi
+      fi
+
+    : ; done
+    [ $? -ne 0 ] && ERROR_EXIT
+
+  elif [ "${mail_syurui}" == "2" ] ; then
+  # 宛先不明メール
+  # 実績に存在するが、利用者マスタに存在しない利用者コード
+
+    # 利用者マスタの宛先不明を取得
+    cat $tmp-riyosya_master-fumei |\
+    # 1:利用者コード 2:利用者名 3:メールアドレス
+    ## 利用者コードが「unknown」になっているので置き換える
+    awk '{print "'"${riyosya_code}"'",$2,$3}' |\
+    while read code name address ; do
+
+      ###############################
+      # メール本文、件名
+      ###############################
+      subject="[Lawson-SCM]在庫切れ速報（${sime}時締め）${day0:0:4}年${day0:4:2}月${day0:6:2}日【${code}：${name}】"
+      subject_password="[Lawson-SCM]在庫切れ速報（${sime}時締め）${day0:0:4}年${day0:4:2}月${day0:6:2}日パスワード"
+
+      cat ${tpld}/HONBUN/ZAIKOSOKUHO_RIYOSYA_ATESAKIFUMEI.txt     |\
+      sed 's/###riyo_id###/'${code}'/g'                            |\
+      sed 's/###riyo_name###/'${name}'/g'                           > $tmp-honbun_atesakifumei
+
+      cat ${tpld}/HONBUN/ZAIKOSOKUHO_RIYOSYA_ATESAKIFUMEI.5MB.txt |\
+      sed 's/###riyo_id###/'${code}'/g'                            |\
+      sed 's/###riyo_name###/'${name}'/g'                           > $tmp-honbun_atesakifumei.5mb
+
+      cat ${tpld}/HONBUN/ZAIKOSOKUHO_RIYOSYA_PASSWORD.txt         |\
+      sed 's/###password###/'${password}'/g'                        > $tmp-honbun_pass
+
+
+      ###############################
+      # 添付ファイルサイズチェック(5MB)
+      ###############################
+      ZIP_FILE="$xlsd/$table.$code.$current_time.zip"
+      if [ $(ls -l $ZIP_FILE | v_choosecol 5) -gt 5120000 ] ; then
+        v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${error_uketuke} --subject "▼要対応▼【添付ファイル5Mb超え、宛先不明】${subject}" $tmp-honbun_atesakifumei.5mb
+        if [ $? -eq 0 ] ; then
+          echo ${code} ${name} ${address} "宛先不明メール(5Mb超え)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+        else
+          v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${error_uketuke} --subject "▼要対応▼【添付ファイル5Mb超え、宛先不明】${subject}" $tmp-honbun_atesakifumei.5mb
+          if [ $? -eq 0 ] ; then
+            # 送信ログを記録
+            echo ${code} ${name} ${address} "宛先不明メール(5Mb超え)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+          else
+            # 送信ログを記録
+            echo ${code} ${name} ${address} "宛先不明メール(5Mb超え)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).NG
+          fi
+        fi
+        # ループへもどる
+        continue
+      fi
+
+
+      ###############################
+      # エクセル送信
+      ###############################
+      v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${address} --subject "▼要対応▼【宛先不明】${subject}" --attach ${ZIP_FILE} $tmp-honbun_atesakifumei
+      if [ $? -eq 0 ] ; then
+        # 送信ログを記録
+        echo ${code} ${name} ${address} "宛先不明メール" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+      else
+        v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${address} --subject "▼要対応▼【宛先不明】${subject}" --attach ${ZIP_FILE} $tmp-honbun_atesakifumei
+        if [ $? -eq 0 ] ; then
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "宛先不明メール" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+        else
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "宛先不明メール" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).NG
+        fi
+      fi
+
+
+      ###############################
+      # パスワード送信
+      ###############################
+      v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${address} --subject ${subject_password} $tmp-honbun_pass
+      if [ $? -eq 0 ] ; then
+        # 送信ログを記録
+        echo ${code} ${name} ${address} "宛先不明メール(パスワード)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+      else
+        v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${address} --subject ${subject_password} $tmp-honbun_pass
+        if [ $? -eq 0 ] ; then
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "宛先不明メール(パスワード)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).OK
+        else
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "宛先不明メール(パスワード)" $ZIP_FILE >> ${sendlogd}/${current_time}_$(basename $0).NG
+        fi
+      fi
+
+    : ; done
+    [ $? -ne 0 ] && ERROR_EXIT
+
+
+  elif [ "${mail_syurui}" == "3" ] ; then
+  # 0件メール
+  # 利用者マスタに存在するが、実績がない利用者コード
+
+    # 利用者マスタを利用者コードで絞る
+    awk '$1=="'"${riyosya_code}"'"' $tmp-riyosya_master |\
+    # 1:利用者コード 2:利用者名 3:メールアドレス
+    while read code name address misiyou ; do
+
+      ###############################
+      # メール本文、件名
+      ###############################
+      subject="[Lawson-SCM]在庫切れ速報（${sime}時締め）${day0:0:4}年${day0:4:2}月${day0:6:2}日【${code}：${name}】"
+
+      cat ${tpld}/HONBUN/ZAIKOSOKUHO_RIYOSYA_ZEROKEN.txt |\
+      sed 's/###riyo_id###/'${code}'/g'                   |\
+      sed 's/###riyo_name###/'${name}'/g'                  > $tmp-honbun_zeroken
+
+
+      ###############################
+      # メール送信
+      ###############################
+      v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${address} --subject ${subject} $tmp-honbun_zeroken
+      if [ $? -eq 0 ] ; then
+        # 送信ログを記録
+        echo ${code} ${name} ${address} "0件メール"  "添付なし" >> ${sendlogd}/${current_time}_$(basename $0).OK
+      else
+        v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${address} --subject ${subject} $tmp-honbun_zeroken
+        if [ $? -eq 0 ] ; then
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "0件メール"  "添付なし" >> ${sendlogd}/${current_time}_$(basename $0).OK
+        else
+          # 送信ログを記録
+          echo ${code} ${name} ${address} "0件メール"  "添付なし" >> ${sendlogd}/${current_time}_$(basename $0).NG
+        fi
+      fi
+
+    : ; done
+    [ $? -ne 0 ] && ERROR_EXIT
+    
+  fi
+
+: ; done
+[ $? -ne 0 ] && ERROR_EXIT
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラーチェック
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 送信NGが0件でなければエラー（LMDC障害検知）
+[ $(v_wc.pl ${sendlogd}/${current_time}_$(basename $0).NG) -ne 0 ] && ERROR_EXIT
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理終了
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 終了時刻の記録
+#LMDC移行# Start
+#LMDC移行#echo "$HOSTNAME $(basename $0) END $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+
+echo "${LOG_BASE} : end time : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#LMDC移行# End
+
+# 終了の処理
+rm -f $tmp-*
+exit 0

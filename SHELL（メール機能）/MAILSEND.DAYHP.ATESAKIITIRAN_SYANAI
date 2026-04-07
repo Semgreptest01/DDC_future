@@ -1,0 +1,370 @@
+#!/bin/bash -xv
+source `dirname $0`/../.bashrc >& /dev/null
+#
+# MAILSEND.DAYHP.ATESAKIITIRAN_SYANAI : 宛先一覧メール配信
+#                                 （商品統括部向け）
+#
+# Usage : MAILSEND.DAYHP.ATESAKIITIRAN_SYANAI <yyyymmdd>
+#         宛先一覧をメールで配信する
+#
+# CREATED BY : vinx 2014/12/15
+# ADD        : vinx 小泉 2021/09/06（計画終了改善対応 商品部向け計画終了メールをアドレス一覧に出力する）
+# MODIFIED BY : VINX 山本 2025/11/18  LMDC移行：横断集計メール移行対応
+
+
+# ログの記録
+#LMDC移行# Start
+#LMDC移行#echo "${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$"
+#LMDC移行#exec 2> ${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$
+exec 2> /dev/null
+source ${PROD_DIR}/SHELL/OUTLOG.INI
+exec 2> ${LOG_FILE}
+#LMDC移行# End
+
+# パス/LANGの設定(cronから起動)
+##
+
+# 共通変数の定義
+source ${PROD_DIR}/SHELL/HPSG.INI
+
+# 日付の定義
+today=$(v_ldate today | v_choosecol 1)
+current_time=$(date +%Y%m%d%H%M%S)
+
+#LMDC移行# Start
+#LMDC移行## 開始ジョブＣＴＲＬ
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.START.${today}
+#LMDC移行#
+#LMDC移行## サブマシンでは処理しない
+#LMDC移行#if [ $(v_server_ctrl.pl -host ${HOSTNAME} -print msflg) == "S" ]; then
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+#LMDC移行#  exit 0
+#LMDC移行#fi
+#LMDC移行# End
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラー時の終了処理定義
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+ERROR_EXIT(){
+#LMDC移行# Start
+#LMDC移行#  # 監視エラー
+#LMDC移行#  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+#LMDC移行#  # エラー、終了ジョブＣＴＲＬ
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.ERROR.${today}
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+#LMDC移行#  # 終了時間の記録
+#LMDC移行#  echo "$HOSTNAME $(basename $0) ERROR $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+#LMDC移行#
+#LMDC移行#  rm -f $tmp-*
+#LMDC移行#  exit 1
+  # 監視エラー
+  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:M]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+
+  # 終了時間の記録
+  echo "${LOG_BASE} : ABEND end : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+
+  #rm -f $tmp-*
+  exit 51
+#LMDC移行# End
+}
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理開始
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 起動時刻の記録
+#LMDC移行# Start
+#LMDC移行#echo "$HOSTNAME $(basename $0) START $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+
+echo "${LOG_BASE} : start time = `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#LMDC移行# End
+
+# オプション解析
+if [ ! -z $1 ]; then
+  day0=$1
+else
+  ERROR_EXIT
+fi
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 配信先マスタ送信（社内）
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+###############################
+## メール件名、本文
+###############################
+
+# 件名
+subject="[Lawson-SCM]　登録アドレス一覧（社内）"
+
+# 本文
+cat ${tpld}/HONBUN/ATESAKIITIRAN_SYANAI.txt      > $tmp-honbun
+cat ${tpld}/HONBUN/ATESAKIITIRAN_SYANAI.5MB.txt  > $tmp-honbun.5mb
+
+
+###############################
+## 添付ファイル
+###############################
+
+# 作成日
+echo ${day0:0:4}"年"${day0:4:2}"月"${day0:6:2}"日" > $tmp-syoriday
+
+# 社内アドレスマスタの当日有効レコードを整形して
+# エクセルにハメるデータを作る。
+awk '$2 <= "'$day0'" && $3 >= "'$day0'"' $tbld/SYANAI_MASTER     |\
+# 1:シーケンスNO 2:有効開始日 3:有効終了日 4:社員コード 5:氏名
+# 6:メールアドレス 7:緊急カット商品配信フラグ 8:在庫切れ速報(12時締め)配信フラグ 9:在庫切れ速報(22時締め)配信フラグ 10:宛先一覧配信フラグ
+# 11:商品部向け計画終了配信フラグ 12:配信フラグ予備 13:配信フラグ予備 14:登録日 15:登録者 16:更新日 17:更新者
+awk '{print $1,\
+      $2=="00000000"?"未設定":substr($2,0,4)"/"substr($2,5,2)"/"substr($2,7,2),\
+      $3=="99999999"?"未設定":substr($3,0,4)"/"substr($3,5,2)"/"substr($3,7,2),\
+      $4,$5,$6,\
+      $7=="1"?"O":"X",\
+      $8=="1"?"O":"X",\
+      $9=="1"?"O":"X",\
+      $10=="1"?"O":"X",\
+# ADD Start 2021/09/06
+#     $11,$12,$13,\
+      $11=="1"?"O":"X",\
+# ADD END 2021/09/06
+      $12,$13,\
+      substr($14,0,4)"/"substr($14,5,2)"/"substr($14,7,2), $15,\
+      substr($16,0,4)"/"substr($16,5,2)"/"substr($16,7,2), $17}'  > $tmp-excel_data
+# 1:シーケンスNO 2:有効開始日 3:有効終了日 4:社員コード 5:氏名
+# 6:メールアドレス 7:緊急カット商品配信フラグ 8:在庫切れ速報(12時締め)配信フラグ 9:在庫切れ速報(22時締め)配信フラグ 10:宛先一覧配信フラグ
+# 11:商品部向け計画終了配信フラグ 12:配信フラグ予備 13:配信フラグ予備 14:登録日 15:登録者 16:更新日 17:更新者
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+
+# 添付ファイル用のエクセル作成
+EXCEL_FILE="$xlsd/ATESAKIITIRAN_SYANAI.$day0.${current_time}.xls"
+v_embed_in_xls.sh < $tpld/EXCEL/TEMPLATE_ATESAKIITIRAN_SYANAI.xls  \
+  1 a4 $tmp-syoriday                                     \
+  1 a7 $tmp-excel_data                                   > $EXCEL_FILE
+[ $? -ne 0 ] && ERROR_EXIT
+
+
+###############################
+## メール送信前チェック
+###############################
+
+# 当日有効のデータが0件なら異常終了
+if [ $(v_wc.pl $tmp-excel_data) -eq 0 ]; then
+  ERROR_EXIT
+fi
+
+###############################
+## メール送信
+###############################
+
+# 送信対象リスト
+awk '$2 <= "'$day0'" && $3 >= "'$day0'" && $10 == "1"{print $6}' $tbld/SYANAI_MASTER > $tmp-mailaddress
+# 1:シーケンスNO 2:有効開始日 3:有効終了日 4:社員コード 5:氏名
+# 6:メールアドレス 7:緊急カット商品配信フラグ 8:在庫切れ速報(12時締め)配信フラグ 9:在庫切れ速報(22時締め)配信フラグ 10:宛先一覧配信フラグ
+# 11:商品部向け計画終了配信フラグ 12:配信フラグ予備 13:配信フラグ予備 14:登録日 15:登録者 16:更新日 17:更新者
+
+# メール送信ログの初期化
+: > ${sendlogd}/${current_time}_ATESAKIITIRAN_SYANAI.OK
+: > ${sendlogd}/${current_time}_ATESAKIITIRAN_SYANAI.NG
+
+# メール送信
+cat $tmp-mailaddress |\
+while read address ;do
+
+  # 添付ファイルのサイズが上限値(5MB）を超えたら、
+  # 「エラー受付アドレス」に警告メールを送信する
+  if [ $(ls -l $EXCEL_FILE | v_choosecol 5) -gt 5120000 ] ; then
+    v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${error_uketuke} --subject "▼要対応▼【添付ファイル5Mb超え】${subject}" $tmp-honbun.5mb
+    if [ $? -eq 0 ] ; then
+      echo "$error_uketuke $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_SYANAI.OK
+    else
+      v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${error_uketuke} --subject "▼要対応▼【添付ファイル5Mb超え】${subject}" $tmp-honbun.5mb
+      if [ $? -eq 0 ] ; then
+        echo "$error_uketuke $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_SYANAI.OK
+      else
+        echo "$error_uketuke $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_SYANAI.NG
+      fi
+    fi
+    break
+  fi
+
+  # メール送信
+  v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${address} --subject ${subject} --attach ${EXCEL_FILE} $tmp-honbun
+  if [ $? -eq 0 ] ; then
+    echo "$address $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_SYANAI.OK
+  else
+    v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${address} --subject ${subject} --attach ${EXCEL_FILE} $tmp-honbun
+    if [ $? -eq 0 ] ; then
+      echo "$address $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_SYANAI.OK
+    else
+      echo "$address $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_SYANAI.NG
+    fi
+  fi
+
+: ;done
+[ $? -ne 0 ] && ERROR_EXIT
+
+
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 配信先マスタ送信（社外）
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+###############################
+## メール件名、本文
+###############################
+
+# 件名
+subject="[Lawson-SCM]　登録アドレス一覧（社外）"
+
+# 本文
+cat ${tpld}/HONBUN/ATESAKIITIRAN_RIYOSYA.txt      > $tmp-honbun
+cat ${tpld}/HONBUN/ATESAKIITIRAN_RIYOSYA.5MB.txt  > $tmp-honbun.5mb
+
+
+###############################
+## 添付ファイル
+###############################
+
+# 実績データ(DT緊急カット商品)の宛先コード、宛先名を取得
+zcat ${orad}/HNT_KEIKAKUSYURYO_DAY/HNT_KEIKAKUSYURYO_DAY.${day0}.gz |\
+#1:商品部地域コード   2:利用者コード        3:ベンダーコード 4:商品コード          5:店案内年度週ＮＯ
+#6:商品部エリアコード 7:商品部エリア名      8:商品部地域名   9:くくりＶＤＲコード 10:くくりＶＤＲ名
+#11:ベンダー名       12:コピー宛先１コード 13:宛先コード    14:宛先名             15:センターコード
+#16:センター名       17:ＤＥＰＴコード     18:ＤＥＰＴ名    19:ＣＬＡＳＳコード   20:ＣＬＡＳＳ名
+#21:商品名           22:計画終了有効開始日 23:推奨取消日    24:履歴区分           25:不可日設定日
+# 履歴区分で絞る(0->当日有効データ,1->過去履歴またはカット済み）
+awk '$24=="0"{print $2,$13,$14}'                                    |\
+# 1:利用者コード 2:宛先コード 3:宛先名
+sort -u                                                             |\
+v_uniqbybot 1 1                                                          > $tmp-jisseki
+# 当日実績が1件もなければ_ _で初期化
+[ $(v_wc.pl $tmp-jisseki) -eq 0 ] && echo _ _ _                     > $tmp-jisseki
+
+# 作成日
+echo ${day0:0:4}"年"${day0:4:2}"月"${day0:6:2}"日" > $tmp-syoriday
+
+# 社外アドレスマスタの当日有効レコードを整形して
+# エクセルにハメるデータを作る。
+awk '$2 <= "'$day0'" && $3 >= "'$day0'"' $tbld/RIYOSYA_MASTER    |\
+# 1:シーケンスNO 2:有効開始日 3:有効終了日 4:利用者コード 5:利用者名
+# 6:メールアドレス 7:緊急カット商品配信フラグ 8:在庫切れ速報(12時締め)配信フラグ 9:在庫切れ速報(22時締め)配信フラグ 10:計画終了対象商品（日次）
+# 11:配信フラグ予備 12:配信フラグ予備 13:配信フラグ予備 14:登録日 15:登録者 16:更新日 17:更新者
+v_r3match +_ pk=4 $tmp-jisseki -                                   |\
+# 1:シーケンスno 2:有効開始日 3:有効終了日 4:利用者コード 5:宛先コード
+# 6:宛先名 7:利用者名 8:メールアドレス 9:緊急カット商品配信フラグ 10:在庫切れ速報(12時締め)配信フラグ
+# 11:在庫切れ速報(22時締め)配信フラグ 12:計画終了対象商品（日次） 13:配信フラグ予備 14:配信フラグ予備 15:配信フラグ予備
+# 16:登録日 17:登録者 18:更新日 19:更新者
+awk '{print $1,\
+      $2=="00000000"?"未設定":substr($2,0,4)"/"substr($2,5,2)"/"substr($2,7,2),\
+      $3=="99999999"?"未設定":substr($3,0,4)"/"substr($3,5,2)"/"substr($3,7,2),\
+      $4,$7,$5,$6,$8,\
+      $9=="1"?"O":"X",\
+      $10=="1"?"O":"X",\
+      $11=="1"?"O":"X",\
+      $12=="1"?"O":"X",\
+      $13,$14,$15,\
+      substr($16,0,4)"/"substr($16,5,2)"/"substr($16,7,2), $17,\
+      substr($18,0,4)"/"substr($18,5,2)"/"substr($18,7,2), $19}'  > $tmp-excel_data
+# 1:シーケンスno 2:有効開始日 3:有効終了日 4:利用者コード 5:利用者名
+# 6:宛先コード 7:宛先名 8:メールアドレス 9:緊急カット商品配信フラグ 10:在庫切れ速報(12時締め)配信フラグ
+# 11:在庫切れ速報(22時締め)配信フラグ 12:計画終了対象商品（日次） 13:配信フラグ予備 14:配信フラグ予備 15:配信フラグ予備
+# 16:登録日 17:登録者 18:更新日 19:更新者
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+
+# 添付ファイル用のエクセル作成
+EXCEL_FILE="$xlsd/ATESAKIITIRAN_RIYOSYA.$day0.${current_time}.xls"
+v_embed_in_xls.sh < $tpld/EXCEL/TEMPLATE_ATESAKIITIRAN_RIYOSYA.xls  \
+  1 a4 $tmp-syoriday                                      \
+  1 a7 $tmp-excel_data                                    > $EXCEL_FILE
+[ $? -ne 0 ] && ERROR_EXIT
+
+
+###############################
+## メール送信前チェック
+###############################
+
+# 当日有効のデータが0件なら異常終了
+if [ $(v_wc.pl $tmp-excel_data) -eq 0 ]; then
+  ERROR_EXIT
+fi
+
+###############################
+## メール送信
+###############################
+
+# 送信対象リスト
+awk '$2 <= "'$day0'" && $3 >= "'$day0'" && $10 == "1"{print $6}' $tbld/SYANAI_MASTER > $tmp-mailaddress
+# 1:シーケンスNO 2:有効開始日 3:有効終了日 4:社員コード 5:氏名
+# 6:メールアドレス 7:緊急カット商品配信フラグ 8:在庫切れ速報(12時締め)配信フラグ 9:在庫切れ速報(22時締め)配信フラグ 10:宛先一覧配信フラグ
+# 11:配信フラグ予備 12:配信フラグ予備 13:配信フラグ予備 14:登録日 15:登録者 16:更新日 17:更新者
+
+# メール送信ログの初期化
+: > ${sendlogd}/${current_time}_ATESAKIITIRAN_RIYOSYA.OK
+: > ${sendlogd}/${current_time}_ATESAKIITIRAN_RIYOSYA.NG
+
+# メール送信
+cat $tmp-mailaddress |\
+while read address ;do
+
+  # 添付ファイルのサイズが上限値(5MB）を超えたら、
+  # 「エラー受付アドレス」に警告メールを送信する
+  if [ $(ls -l $EXCEL_FILE | v_choosecol 5) -gt 5120000 ] ; then
+    v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${error_uketuke} --subject "▼要対応▼【添付ファイル5Mb超え】${subject}" $tmp-honbun.5mb
+    if [ $? -eq 0 ] ; then
+      echo "$error_uketuke $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_RIYOSYA.OK
+    else
+      v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${error_uketuke} --subject "▼要対応▼【添付ファイル5Mb超え】${subject}" $tmp-honbun.5mb
+      if [ $? -eq 0 ] ; then
+        echo "$error_uketuke $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_RIYOSYA.OK
+      else
+        echo "$error_uketuke $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_RIYOSYA.NG
+      fi
+    fi
+    break
+  fi
+
+  # メール送信
+  v_smtpsend.pl --host ${mail_server_main} --from ${from} --to ${address} --subject ${subject} --attach ${EXCEL_FILE} $tmp-honbun
+  if [ $? -eq 0 ] ; then
+    echo "$address $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_RIYOSYA.OK
+  else
+    v_smtpsend.pl --host ${mail_server_sub} --from ${from} --to ${address} --subject ${subject} --attach ${EXCEL_FILE} $tmp-honbun
+    if [ $? -eq 0 ] ; then
+      echo "$address $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_RIYOSYA.OK
+    else
+      echo "$address $EXCEL_FILE" >> ${sendlogd}/${current_time}_ATESAKIITIRAN_RIYOSYA.NG
+    fi
+  fi
+
+: ;done
+[ $? -ne 0 ] && ERROR_EXIT
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラーチェック
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 送信NGが0件でなければエラー（LMDC障害検知）
+[ $(cat ${sendlogd}/${current_time}_ATESAKIITIRAN_RIYOSYA.NG ${sendlogd}/${current_time}_ATESAKIITIRAN_SYANAI.NG | v_wc.pl) -ne 0 ] && ERROR_EXIT
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理終了
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 終了時刻の記録
+#LMDC移行# Start
+#LMDC移行#echo "$HOSTNAME $(basename $0) END $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+
+echo "${LOG_BASE} : end time : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#LMDC移行# End
+
+# テンポラリファイルの削除
+rm -f $tmp-*
+exit 0

@@ -1,0 +1,132 @@
+#!/bin/bash -xv
+source `dirname $0`/../.bashrc >& /dev/null
+#
+# DATAMASTER.DAYHP.KINKYUCUT_ADD : 緊急カット商品メール配信マスター（追加分）
+#
+# CREATED BY : vinx 2014/12/15
+# MODIFIED BY : LAWSON 2017/4/24 ED1704_06（メール遅延監視設定の見直し対応）
+#                                インシデント起票対象外事前遅延検知を追加
+# MODIFIED BY : VINX 山本 2025/11/20  LMDC移行：横断集計メール移行対応
+
+
+# ログの記録
+#LMDC移行# Start
+#LMDC移行#echo "${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$"
+#LMDC移行#exec 2> ${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$
+exec 2> /dev/null
+source ${PROD_DIR}/SHELL/OUTLOG.INI
+exec 2> ${LOG_FILE}
+#LMDC移行# End
+
+# パス/LANGの設定(cronから起動)
+##
+
+# 共通変数の定義
+source ${PROD_DIR}/SHELL/HPSG.INI
+
+# 日付の定義
+today=$(v_ldate today | v_choosecol 1)
+
+#LMDC移行# Start
+#LMDC移行## 開始ジョブＣＴＲＬ
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.START.${today}
+#LMDC移行#
+#LMDC移行## サブマシンでは処理しない
+#LMDC移行#if [ $(v_server_ctrl.pl -host ${HOSTNAME} -print msflg) == "S" ]; then
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+#LMDC移行#  exit 0
+#LMDC移行#fi
+#LMDC移行# End
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラー時の終了処理定義
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+ERROR_EXIT(){
+#LMDC移行# Start
+#LMDC移行#  # 監視エラー
+#LMDC移行#  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+#LMDC移行#  # エラー、終了ジョブＣＴＲＬ
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.ERROR.${today}
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+#LMDC移行#  # 終了時間の記録
+#LMDC移行#  echo "$HOSTNAME $(basename $0) ERROR $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+#LMDC移行#
+#LMDC移行#  rm -f $tmp-*
+#LMDC移行#  exit 1
+  # 監視エラー
+  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:M]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+
+  # 終了時間の記録
+  echo "${LOG_BASE} : ABEND end : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+
+  rm -f $tmp-*
+  exit 51
+#LMDC移行# End
+}
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理開始
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 起動時刻の記録
+#LMDC移行# Start
+#LMDC移行#echo "$HOSTNAME $(basename $0) START $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+
+echo "${LOG_BASE} : start time = `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#LMDC移行# End
+
+#LMDC移行# Start
+#LMDC移行## 起動セマファを待つ
+#LMDC移行#while true; do
+#LMDC移行#
+#LMDC移行#   # 通常時刻を越えたら遅延エラー
+#LMDC移行#   if [ "$(date +%H%M)" -ge "0700" ] ; then
+#LMDC移行#     echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_DELAY [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+#LMDC移行## 2017/04/24 LAWSON MOD ED1704_06 インシデント起票対象外事前遅延検知を追加 START
+#LMDC移行#   # 監視時刻を越えたら遅延アラート
+#LMDC移行#   elif [ "$(date +%H%M)" -ge "0645" ] ; then
+#LMDC移行#     echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) RCV_DELAY [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+#LMDC移行#   fi
+#LMDC移行## 2017/04/24 LAWSON MOD ED1704_06 インシデント起票対象外事前遅延検知を追加 END
+#LMDC移行#
+#LMDC移行#   # 最遅時刻になったらループ中断
+#LMDC移行#   if [ "$(date +%H%M)" -ge "1600" ] ; then
+#LMDC移行#     ERROR_EXIT
+#LMDC移行#     break
+#LMDC移行#   fi
+#LMDC移行#
+#LMDC移行#   # 前処理の終了ジョブＣＴＲＬを確認
+#LMDC移行#   if [ ! -e ${semd}/DATAMASTER.DAYHP.DT.KINKYUCUT.${HOSTNAME}.END.${today} ] ; then
+#LMDC移行#     sleep 300 && continue   
+#LMDC移行#   fi
+#LMDC移行#
+#LMDC移行#   # メール送信
+#LMDC移行#   ${shld}/MAILSEND.DAYHP.KINKYUCUT_RIYOSYA_ADD $today
+#LMDC移行#   [ $? -ne 0 ] && ERROR_EXIT
+#LMDC移行#
+#LMDC移行#   # ループを抜ける
+#LMDC移行#   break
+#LMDC移行#
+#LMDC移行#done
+
+# メール送信
+${shld}/MAILSEND.DAYHP.KINKYUCUT_RIYOSYA_ADD $today
+[ $? -ne 0 ] && ERROR_EXIT
+#LMDC移行# End
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理終了
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 終了時刻の記録
+#LMDC移行# Start
+#LMDC移行#echo "$HOSTNAME $(basename $0) END $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+
+echo "${LOG_BASE} : end time : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+#LMDC移行# End
+
+# 終了の処理
+rm -f $tmp-*
+exit 0

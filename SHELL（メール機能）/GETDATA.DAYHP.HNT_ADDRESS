@@ -1,0 +1,165 @@
+#!/bin/bash -xv
+source `dirname $0`/../.bashrc >& /dev/null
+#
+# GETDATA.DAYHP.HNT_ADDRESS : オラクルからのデータ取得
+#
+# CREATED BY : vinx 2014/12/15
+# UPDATE  BY : LAWSON 2016/11/15  ED1611_05（ORACLE接続先DBサーバ停止時のデータ取得処理エラー追加対応）
+#               ORACLE接続不可時に検知不能なため、ファイル有無の判定処理を追加。
+# MODIFIED BY : LAWSON 2017/3/3 ED1702_01（サーバ間コピー処理失敗時のエラーハンドリング見直し対応）
+#                                内部コピー失敗メッセージを出力し、業務影響はないが失敗を検知する
+# MODIFIED BY : vinx 2025/11/19 LMDC移行 JP1対応
+
+#LMDC移行## ログ処理変更 START
+#LMDC移行## ログの記録
+#LMDC移行#echo "${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$"
+#LMDC移行#exec 2> ${PROD_DIR}/LOG/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$
+exec 2> /dev/null
+source ${PROD_DIR}/SHELL/OUTLOG.INI
+exec 2> ${LOG_FILE}
+#LMDC移行## ログ処理変更 END
+
+# パス/LANGの設定(cronから起動)
+##
+
+# 共通変数の定義
+source ${PROD_DIR}/SHELL/ORCL.INI
+
+#LMDC移行# JP1対応　不要処理コメントアウト START
+#LMDC移行## 開始ジョブＣＴＲＬ
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.START.$(date +%Y%m%d)
+
+#LMDC移行## サブマシンでは処理しない
+#LMDC移行#if [ $(v_server_ctrl.pl -host ${HOSTNAME} -print msflg) == "S" ]; then
+#LMDC移行#  touch ${semd}/$(basename $0).${HOSTNAME}.END.$(date +%Y%m%d)
+#LMDC移行#  exit 0
+#LMDC移行#fi
+#LMDC移行# JP1対応　コメントアウト END
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラー時の終了処理定義
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# JP1対応　ログ出力、監視フラグ変更、リターンコード変更 START
+
+ERROR_EXIT(){
+  # 監視エラー
+#LMDC移行##  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+  echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) HENPIN_BATCH_ERROR [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:M]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+  # エラー、終了ジョブＣＴＲＬ
+#LMDC移行# touch ${semd}/$(basename $0).${HOSTNAME}.ERROR.$(date +%Y%m%d)
+#LMDC移行# touch ${semd}/$(basename $0).${HOSTNAME}.END.$(date +%Y%m%d)
+  # 終了時間の記録
+#LMDC移行#  echo "$HOSTNAME $(basename $0) ERROR $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+  echo "${LOG_BASE} : ERROR end : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+
+  rm -f $tmp-*
+#  exit 1
+  exit 51
+}
+# JP1対応 END
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# エラーチェック
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+day0=$1
+[ -z  $day0 ] && ERROR_EXIT
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# RIYOSYA_MASTERのバックアップを取得する
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# バックアップを取得する。（バックアップ名：RIYOSYA_MASTER_日NO）
+  DAY_NO=`date +%d`
+  cp -p ${PROD_DIR}/HPSG/TBL/RIYOSYA_MASTER ${PROD_DIR}/HPSG/TBL/RIYOSYA_MASTER_${DAY_NO}
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理開始
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 起動時刻の記録
+# JP1対応　ログ出力変更 START
+#LMDC移行#echo "$HOSTNAME $(basename $0) START $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+echo "${LOG_BASE} : start time = `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+# JP1対応 END
+
+# 対象テーブル
+table=HNT_ADDRESS
+
+# 出力ファイル名
+  #旧out1を新out2に変更し、新たにtmp領域でファイル出力するための定義を追加
+  #out1=${PROD_DIR}/HPSG/TBL/RIYOSYA_MASTER
+  out1=$tmp-RIYOSYA_MASTER
+  out2=${PROD_DIR}/HPSG/TBL/RIYOSYA_MASTER
+
+# SQL作成
+sed 's%###OUT1###%'${out1}'%g' ${sqld}/${table}.sql > $tmp-sql.${table}
+[ $(STS_CHK ${PIPESTATUS[@]}) -ne 0 ] && ERROR_EXIT
+
+while true; do
+
+  # SQL実行
+  sqlplus ${orcl} @$tmp-sql.${table}
+
+  # LAWSON 2016/11/15 ADD ED1611_05 START
+  # ０件だった場合はエラー
+  [ ! -s ${out1}.lst ] && ERROR_EXIT
+  # LAWSON 2016/11/15 ADD ED1611_05 END
+
+  # エラーリトライ
+  [ "$(tail -4 ${out1}.lst | head -1 | v_choosecol 1)" = "ERROR:" ] && { continue; }
+  break
+
+  #エラーリトライをmvの前に持ってきたことにより、エラーリトライ判定で正常の場合に
+  #mvを通過せずループを抜けるため、ループ処理後にmv処理を移動。ループ内mv処理をコメントアウト
+  #mv ${out1}.lst ${out1}
+
+  #エラーリトライの確認ファイルを${out1}から${out1}.lstに変更し、mv処理前にエラーリトライを移動したためコメントアウト
+  # エラーリトライ
+  #[ "$(tail -4 ${out1} | head -1 | v_choosecol 1)" = "ERROR:" ] && { continue; }
+  #break
+
+done
+
+mv ${out1}.lst ${out2}
+
+# JP1対応　不要処理コメントアウト START
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 正・副同期
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+#LMDC移行## 副マシンにコピーする
+#LMDC移行#submcn=$(v_server_ctrl.pl -msflg S -job odan_b -print host)
+#LMDC移行#if [ "${submcn}" != "" ] ; then
+#LMDC移行## 2017/03/03 LAWSON ADD ED1702_01 内部コピー失敗メッセージを出力 START
+#LMDC移行#  #scp -p ${PROD_DIR}/HPSG/TBL/RIYOSYA_MASTER ${edmap_H_BS}:${PROD_DIR}/HPSG/TBL/
+#LMDC移行#  scp -p ${PROD_DIR}/HPSG/TBL/RIYOSYA_MASTER ${submcn}:${PROD_DIR}/HPSG/TBL/
+#LMDC移行#  [ $? -eq 0 ] || echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) EDDATALINK_WARNING [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+#LMDC移行## 2017/03/03 LAWSON ADD ED1702_01 内部コピー失敗メッセージを出力 END
+
+#LMDC移行## 2017/03/03 LAWSON ADD ED1702_01 内部コピー失敗メッセージを出力 START
+#LMDC移行#  #scp -p ${PROD_DIR}/HPSG/TBL/RIYOSYA_MASTER_${DAY_NO} ${edmap_H_BS}:${PROD_DIR}/HPSG/TBL/
+#LMDC移行#  scp -p ${PROD_DIR}/HPSG/TBL/RIYOSYA_MASTER_${DAY_NO} ${submcn}:${PROD_DIR}/HPSG/TBL/
+#LMDC移行#  [ $? -eq 0 ] || echo "$(date +%Y/%m/%d) $(date +%H:%M:%S) EDDATALINK_WARNING [batchname:$(basename $0) / host:${HOSTNAME} / pid:$$ / msflg:$(v_server_ctrl.pl -host $HOSTNAME -print msflg)]" >> ${PROD_DIR}/LOG/MESSAGES_APL
+#LMDC移行## 2017/03/03 LAWSON ADD ED1702_01 内部コピー失敗メッセージを出力 END
+#LMDC移行#fi
+# JP1対応　不要処理コメントアウト END
+
+
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+# 処理終了
+#_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+# 終了時刻の記録
+# JP1対応　ログ出力変更 START
+#LMDC移行#echo "$HOSTNAME $(basename $0) END $(date +%Y%m%d%H%M%S)" >> ${logd}/UPCNT
+#LMDC移行#touch ${semd}/$(basename $0).${HOSTNAME}.END.${today}
+echo "${LOG_BASE} : end time : `date +%y/%m/%d:%H:%M:%S`" | tee -a ${LOG_FILE}
+# JP1対応 END
+
+# テンポラリーファイルの削除
+rm -f $tmp-*
+
+# 終了
+exit 0
