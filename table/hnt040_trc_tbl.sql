@@ -1,0 +1,1 @@
+TRUNCATE TABLE HNT_ベンダー別計画終了対象商品 REUSE STORAGE;

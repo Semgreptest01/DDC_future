@@ -1,0 +1,1 @@
+TRUNCATE TABLE HNT_Œv‰æI—¹‘ÎÛ¤•iQTŽŸ’ •[ REUSE STORAGE;
