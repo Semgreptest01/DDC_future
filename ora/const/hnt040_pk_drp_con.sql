@@ -1,0 +1,1 @@
+ALTER TABLE HNT_ベンダー別計画終了対象商品 DROP PRIMARY KEY;

@@ -1,0 +1,33 @@
+LOAD DATA
+ APPEND INTO TABLE HNT_オンライン宛先パラメータ
+ (
+ 宛先パラメータデータ区分                 POSITION(1:2) CHAR,
+ 宛先パラメータキーコード                 POSITION(3:11) CHAR,
+ 社コード                                 POSITION(12:17) CHAR,
+ 有効終了日                               POSITION(18:25) DATE "YYYYMMDD",
+ 有効開始日                               POSITION(26:33) DATE "YYYYMMDD",
+ 宛先コード                               POSITION(34:41) CHAR,
+ ベンダーコード                           POSITION(42:47) CHAR,
+ 処理区分                                 POSITION(48:49) CHAR,
+ 物理削除日                               POSITION(50:57) DATE "YYYYMMDD",
+ コピー処理日                             POSITION(58:65) DATE "YYYYMMDD",
+ コピー処理状況区分                       POSITION(66:67) CHAR,
+ 物理削除区分                             POSITION(68:69) CHAR,
+ 作成者氏名コード                         POSITION(70:77) CHAR,
+ 作成者氏名                               POSITION(78:107) CHAR,
+ 作成者部署コード                         POSITION(108:113) CHAR,
+ 作成者部署名                             POSITION(114:153) CHAR,
+ 作成プログラムＩＤ                       POSITION(154:193) CHAR,
+ 作成日時                                 POSITION(194:207) DATE "YYYYMMDDHH24MISS",
+ オンライン更新者氏名コード               POSITION(208:215) CHAR,
+ オンライン更新者氏名                     POSITION(216:245) CHAR,
+ オンライン更新者部署コード               POSITION(246:251) CHAR,
+ オンライン更新者部署名                   POSITION(252:291) CHAR,
+ オンライン更新プログラムＩＤ             POSITION(292:331) CHAR,
+ オンライン更新日時                       POSITION(332:345) DATE "YYYYMMDDHH24MISS",
+ バッチ更新プログラムＩＤ                 POSITION(346:385) CHAR,
+ バッチ更新日時                           POSITION(386:399) DATE "YYYYMMDDHH24MISS",
+ ロック連番                               POSITION(400:403) ZONED NULLIF ロック連番=BLANKS,
+ 削除区分                                 POSITION(404:405) CHAR,
+ 更新端末ＩＤ                             POSITION(406:435) CHAR
+ )

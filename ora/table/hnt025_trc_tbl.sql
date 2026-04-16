@@ -1,0 +1,1 @@
+TRUNCATE TABLE HNT_新オンライン宛先ベンダー REUSE STORAGE;

@@ -1,0 +1,1 @@
+TRUNCATE TABLE HNT_新オンライン宛先基本情報 REUSE STORAGE;

@@ -1,0 +1,1 @@
+ALTER TABLE HNT_新オンライン宛先ベンダー DROP PRIMARY KEY;

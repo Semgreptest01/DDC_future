@@ -1,0 +1,1 @@
+ALTER TABLE HNT_オンライン宛先パラメータ DROP PRIMARY KEY;

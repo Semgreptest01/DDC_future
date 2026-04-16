@@ -1,0 +1,1 @@
+TRUNCATE TABLE HNW_オンライン宛先パラメータ REUSE STORAGE;
